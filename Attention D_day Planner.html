@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d1015" />
+<title>어텐션 · 기말 D-day 플래너</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;500;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0d1015; --ink2:#141923; --card:#1a212e; --card2:#222b3a;
+  --line:#2c3647; --txt:#e9eef6; --sub:#94a3b8; --muted:#64748b;
+  --amber:#ffc23d; --amber-d:#f2a900; --mint:#3ee0a3; --coral:#ff6b6b; --violet:#8b9dff;
+  --fd:'Black Han Sans',sans-serif; --fb:'Gothic A1',sans-serif; --fm:'Space Mono',monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{background:var(--ink);}
+body{font-family:var(--fb);color:var(--txt);min-height:100vh;
+  background:
+   radial-gradient(1200px 600px at 80% -10%, rgba(255,194,61,.10), transparent 60%),
+   radial-gradient(900px 500px at -10% 110%, rgba(62,224,163,.08), transparent 55%),
+   var(--ink);}
+#grain{position:fixed;inset:0;pointer-events:none;opacity:.04;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+#wrap{position:relative;z-index:1;max-width:520px;margin:0 auto;padding:0 0 96px;}
+.hl{position:relative;display:inline;}
+.hl::after{content:"";position:absolute;left:-2px;right:-4px;bottom:2px;height:42%;
+  background:linear-gradient(90deg,var(--amber),var(--amber-d));transform:skew(-9deg);z-index:-1;opacity:.85;border-radius:2px;}
+.disp{font-family:var(--fd);letter-spacing:.4px;line-height:1.15;}
+.mono{font-family:var(--fm);}
+.fade{animation:fade .5s ease both;}
+@keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+button{cursor:pointer;border:none;font-family:var(--fb);font-weight:800;transition:transform .12s ease,filter .2s;}
+button:active{transform:scale(.97);}
+input{font-family:var(--fb);}
+input::placeholder{color:var(--muted);}
+.inp{width:100%;background:var(--ink2);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;color:var(--txt);font-size:15px;outline:none;}
+.range{-webkit-appearance:none;appearance:none;height:6px;border-radius:99px;background:var(--line);outline:none;width:100%;}
+.range::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#fff,var(--amber) 60%);cursor:pointer;box-shadow:0 0 0 4px rgba(255,194,61,.18);}
+.range::-moz-range-thumb{width:22px;height:22px;border:none;border-radius:50%;background:var(--amber);cursor:pointer;}
+#nav{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(13,16,21,.86);
+  backdrop-filter:blur(14px);border-top:1px solid var(--line);}
+#nav>div{max-width:520px;margin:0 auto;display:flex;}
+.tabbtn{flex:1;background:transparent;padding:12px 0 16px;display:flex;flex-direction:column;
+  align-items:center;gap:4px;color:var(--muted);font-size:11px;}
+.tabbtn.on{color:var(--amber);}
+.tabbtn .ic{font-size:20px;line-height:1;}
+.scroll::-webkit-scrollbar{height:6px}
+.scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+.subcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px;}
+.chip{font-family:var(--fm);font-weight:700;}
+.daycard,.taskrow{margin-bottom:8px;}
+.taskrow{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:12px 14px;cursor:pointer;transition:opacity .2s;}
+.taskrow.done{opacity:.55;}
+.taskrow.done .sname{text-decoration:line-through;}
+.cbox{width:24px;height:24px;border-radius:7px;border:2px solid var(--line);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:#0d1015;font-weight:900;}
+.taskrow.done .cbox{border-color:var(--mint);background:var(--mint);}
+</style>
+</head>
+<body>
+<div id="grain"></div>
+<div id="wrap">
+  <div id="header"></div>
+  <div id="view"></div>
+</div>
+<div id="nav"><div>
+  <button class="tabbtn" data-tab="setup"><span class="ic">⚙️</span>설정</button>
+  <button class="tabbtn" data-tab="plan"><span class="ic">🗓️</span>내 계획</button>
+</div></div>
+
+<script>
+"use strict";
+/* ===== 어텐션 기말 D-day 플래너 (독립 실행형) ===== */
+const WEEKDAYS=["일","월","화","수","목","금","토"];
+const PHASES={
+  read:{ko:"1회독",color:"var(--violet)",bg:"rgba(139,157,255,.14)"},
+  solve:{ko:"문제풀이",color:"var(--amber)",bg:"rgba(255,194,61,.14)"},
+  final:{ko:"마무리",color:"var(--coral)",bg:"rgba(255,107,107,.14)"},
+};
+const SCORE_LABELS=["","🥲 거의 없음","😟 약함","😐 보통","🙂 괜찮음","😎 자신 있음"];
+const KEY="attention-planner-v1";
+
+let S=load()||{
+  name:"", weekdayHours:3, weekendHours:6,
+  subjects:["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""})),
+  done:{}, generated:false, tab:"setup"
+};
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
+
+function todayMid(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function parseDate(s){if(!s)return null;const d=new Date(s+"T00:00:00");return isNaN(d)?null:d;}
+function dayDiff(a,b){return Math.round((b-a)/86400000);}
+function fmtMD(d){return (d.getMonth()+1)+"."+d.getDate();}
+function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function taskHint(subject,phase){
+  const eng=subject.indexOf("영어")>=0;
+  if(phase==="read")return eng?subject+" 본문·핵심표현 1회독 + 어휘 정리":subject+" 개념·교과서 1회독 + 핵심 정리";
+  if(phase==="solve")return eng?subject+" 기출/예상문제 + 본문 변형 대비":subject+" 기출·예상문제 풀이 + 오답 체크";
+  return eng?subject+" 오답 재점검 + 어휘·표현 암기 마무리":subject+" 오답 재점검 + 암기 마무리";
+}
+
+function buildPlan(){
+  const today=todayMid();
+  const subs=S.subjects.map((s,i)=>({...s,idx:i,d:parseDate(s.date)}))
+    .filter(s=>s.name.trim()&&s.d&&dayDiff(today,s.d)>=0);
+  if(!subs.length)return{days:[],summary:[]};
+  const last=Math.max(...subs.map(s=>dayDiff(today,s.d)));
+  const summary=[...subs].sort((a,b)=>a.d-b.d).map(s=>({name:s.name,dday:dayDiff(today,s.d)}));
+  const days=[];
+  for(let off=0;off<=last;off++){
+    const date=new Date(today);date.setDate(today.getDate()+off);
+    const wd=date.getDay(); const weekend=(wd===0||wd===6);
+    const dayMin=(weekend?S.weekendHours:S.weekdayHours)*60;
+    let active=subs.map(s=>{
+      const remain=dayDiff(date,s.d); if(remain<0)return null;
+      const span=dayDiff(today,s.d);
+      let phase; if(remain<=2)phase="final";
+      else if(remain<=Math.max(3,Math.round(span*0.45)))phase="solve"; else phase="read";
+      const weakness=6-(s.score||3); const urgency=1/Math.max(1,remain);
+      return {name:s.name,phase,weight:weakness*(1+2*urgency),remain};
+    }).filter(Boolean);
+    if(!active.length||dayMin<=0){days.push({off,date,wd,tasks:[]});continue;}
+    active.sort((a,b)=>b.weight-a.weight);
+    const top=active.slice(0,3); const sum=top.reduce((a,b)=>a+b.weight,0);
+    const tasks=top.map((t,i)=>{
+      let m=Math.round((dayMin*(t.weight/sum))/10)*10; m=Math.max(20,m);
+      return {id:off+"-"+i,subject:t.name,phase:t.phase,minutes:m,hint:taskHint(t.name,t.phase)};
+    });
+    days.push({off,date,wd,tasks});
+  }
+  return{days,summary};
+}
+
+/* ---------- render ---------- */
+function renderHeader(){
+  const t=todayMid();
+  document.getElementById("header").innerHTML=`
+   <div class="fade" style="padding:26px 20px 14px">
+    <div class="mono" style="color:var(--amber);font-size:12px;letter-spacing:2px;margin-bottom:8px">ATTENTION · 기말 D-DAY PLANNER</div>
+    <h1 class="disp" style="font-size:30px">${S.name?esc(S.name)+"의 ":""}<span class="hl">기말 작전</span> 짜기</h1>
+    <div style="color:var(--sub);font-size:13px;margin-top:8px">오늘 ${t.getMonth()+1}월 ${t.getDate()}일 (${WEEKDAYS[t.getDay()]}) · 시험일에서 거꾸로 설계합니다</div>
+   </div>`;
+}
+
+function renderNav(){
+  document.querySelectorAll(".tabbtn").forEach(b=>{
+    b.classList.toggle("on",b.dataset.tab===S.tab);
+  });
+}
+
+function render(){
+  renderHeader(); renderNav();
+  if(S.tab==="setup")renderSetup(); else renderPlan();
+  save();
+}
+
+/* ----- Setup ----- */
+function renderSetup(){
+  const today=todayMid();
+  const v=document.getElementById("view");
+  v.innerHTML=`
+  <div style="padding:4px 16px 8px">
+    <div style="margin-bottom:22px">
+      ${secHead("🎯","1. 누구의 계획?")}
+      <input id="i-name" class="inp" placeholder="이름 (선택)" value="${esc(S.name)}">
+    </div>
+
+    <div style="margin-bottom:22px">
+      ${secHead("📅","2. 과목 · 시험일 · 자신감")}
+      <div id="subs"></div>
+      <button id="addsub" style="width:100%;background:var(--card2);color:var(--txt);border-radius:14px;padding:12px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--line)">＋ 과목 추가</button>
+    </div>
+
+    <div style="margin-bottom:22px">
+      ${secHead("🔥","3. 하루 공부 가능 시간")}
+      ${hourRow("평일","wd",S.weekdayHours)}
+      ${hourRow("주말","we",S.weekendHours)}
+    </div>
+
+    <button id="gen" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--amber-d));color:#1a1206;border-radius:16px;padding:16px;font-size:16px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 10px 30px -10px rgba(255,194,61,.5)">✨ 역산 계획 만들기</button>
+    <button id="reset" style="width:100%;background:transparent;color:var(--muted);padding:14px;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px">↻ 전체 초기화</button>
+  </div>`;
+
+  renderSubs();
+  // name
+  document.getElementById("i-name").addEventListener("input",e=>{S.name=e.target.value;});
+  document.getElementById("addsub").addEventListener("click",()=>{S.subjects.push({name:"",date:"",score:3,scope:""});renderSubs();save();});
+  document.getElementById("gen").addEventListener("click",generate);
+  document.getElementById("reset").addEventListener("click",reset);
+  // hours
+  bindHour("wd"); bindHour("we");
+}
+function secHead(ic,t){return `<div style="display:flex;align-items:center;gap:7px;margin-bottom:12px"><span>${ic}</span><span style="font-weight:800;font-size:14px">${t}</span></div>`;}
+function hourRow(label,id,val){
+  return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <span style="width:40px;color:var(--sub);font-weight:700;font-size:14px">${label}</span>
+    <input id="h-${id}" class="range" type="range" min="0" max="12" step="0.5" value="${val}" style="flex:1">
+    <span id="hl-${id}" class="mono" style="width:56px;text-align:right;color:var(--amber);font-weight:700">${val}h</span></div>`;
+}
+function bindHour(id){
+  const el=document.getElementById("h-"+id), lab=document.getElementById("hl-"+id);
+  el.addEventListener("input",e=>{const v=+e.target.value;lab.textContent=v+"h";if(id==="wd")S.weekdayHours=v;else S.weekendHours=v;save();});
+}
+function renderSubs(){
+  const today=todayMid();
+  const c=document.getElementById("subs"); c.innerHTML="";
+  S.subjects.forEach((s,i)=>{
+    const d=parseDate(s.date); const dd=d?dayDiff(today,d):null;
+    const el=document.createElement("div"); el.className="subcard";
+    el.innerHTML=`
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="inp s-name" data-i="${i}" placeholder="과목명" value="${esc(s.name)}" style="flex:1">
+        <input class="inp s-date" data-i="${i}" type="date" value="${esc(s.date)}" style="flex:1;color-scheme:dark">
+        <button class="s-del" data-i="${i}" style="background:transparent;color:var(--muted);padding:6px;font-size:18px">✕</button>
+      </div>
+      <div class="s-dd" style="margin-top:8px;font-size:12px">${dd!==null&&dd>=0?`<span class="chip" style="color:${dd<=3?'var(--coral)':'var(--amber)'}">D-${dd===0?"DAY":dd}</span>`:""}</div>
+      <div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px">
+          <span>이 과목 자신감</span><span class="s-slab" style="color:var(--txt);font-weight:800">${SCORE_LABELS[s.score]}</span>
+        </div>
+        <input class="range s-score" data-i="${i}" type="range" min="1" max="5" value="${s.score}">
+      </div>
+      <input class="inp s-scope" data-i="${i}" placeholder="시험 범위 메모 (선택)" value="${esc(s.scope)}" style="margin-top:10px;font-size:13px">`;
+    c.appendChild(el);
+  });
+  // bind
+  c.querySelectorAll(".s-name").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].name=e.target.value;}));
+  c.querySelectorAll(".s-scope").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].scope=e.target.value;}));
+  c.querySelectorAll(".s-date").forEach(el=>el.addEventListener("change",e=>{
+    const i=+e.target.dataset.i; S.subjects[i].date=e.target.value; save();
+    const card=e.target.closest(".subcard"); const dd=parseDate(e.target.value);
+    const n=dd?dayDiff(todayMid(),dd):null;
+    card.querySelector(".s-dd").innerHTML=(n!==null&&n>=0)?`<span class="chip" style="color:${n<=3?'var(--coral)':'var(--amber)'}">D-${n===0?"DAY":n}</span>`:"";
+  }));
+  c.querySelectorAll(".s-score").forEach(el=>el.addEventListener("input",e=>{
+    const i=+e.target.dataset.i,v=+e.target.value; S.subjects[i].score=v; save();
+    e.target.closest(".subcard").querySelector(".s-slab").textContent=SCORE_LABELS[v];
+  }));
+  c.querySelectorAll(".s-del").forEach(el=>el.addEventListener("click",e=>{S.subjects.splice(+e.target.dataset.i,1);renderSubs();save();}));
+}
+function generate(){
+  const ok=S.subjects.some(s=>s.name.trim()&&parseDate(s.date)&&dayDiff(todayMid(),parseDate(s.date))>=0);
+  if(!ok){alert("과목명과 시험 날짜를 하나 이상 입력해 주세요. (오늘 이후 날짜)");return;}
+  S.generated=true; S.tab="plan"; render();
+}
+function reset(){
+  if(!confirm("모든 입력과 진행 상황을 초기화할까요?"))return;
+  S={name:"",weekdayHours:3,weekendHours:6,
+     subjects:["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""})),
+     done:{},generated:false,tab:"setup"};
+  render();
+}
+
+/* ----- Plan ----- */
+function renderPlan(){
+  const plan=buildPlan(); const v=document.getElementById("view");
+  if(!plan.days.length){
+    v.innerHTML=`<div class="fade" style="text-align:center;padding:60px 30px">
+      <div style="font-size:40px;margin-bottom:12px">🗓️</div>
+      <div style="font-weight:800;font-size:16px">아직 만들어진 계획이 없어요.</div>
+      <div style="color:var(--sub);font-size:13px;margin-top:6px">설정에서 과목·시험일을 입력하고 계획을 생성해 주세요.</div>
+      <button id="goset" style="margin-top:18px;background:var(--amber);color:#1a1206;border-radius:12px;padding:10px 20px">설정으로 가기 ›</button></div>`;
+    document.getElementById("goset").addEventListener("click",()=>{S.tab="setup";render();});
+    return;
+  }
+  const total=plan.days.reduce((a,d)=>a+d.tasks.length,0);
+  const doneN=plan.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+  const pct=total?Math.round(doneN/total*100):0;
+
+  let chips=plan.summary.map(s=>`<div style="flex:0 0 auto;background:var(--card2);border:1px solid ${s.dday<=3?'var(--coral)':'var(--line)'};border-radius:12px;padding:8px 12px">
+      <div style="font-size:12px;color:var(--sub);font-weight:700">${esc(s.name)}</div>
+      <div class="chip" style="font-size:14px;color:${s.dday<=3?'var(--coral)':'var(--amber)'}">D-${s.dday===0?"DAY":s.dday}</div></div>`).join("");
+
+  let cards=plan.days.filter(d=>d.tasks.length).map(d=>{
+    const mins=d.tasks.reduce((a,t)=>a+t.minutes,0);
+    const rows=d.tasks.map(t=>{
+      const ph=PHASES[t.phase]; const done=!!S.done[t.id];
+      return `<div class="taskrow ${done?'done':''}" data-id="${t.id}">
+        <div class="cbox">${done?'✓':''}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="sname" style="font-weight:800;font-size:15px">${esc(t.subject)}</span>
+            <span class="chip" style="font-size:11px;color:${ph.color};background:${ph.bg};padding:2px 7px;border-radius:6px">${ph.ko}</span>
+            <span class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${t.minutes}분</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--sub);margin-top:3px">${esc(t.hint)}</div>
+        </div></div>`;
+    }).join("");
+    return `<div class="daycard" style="margin-bottom:16px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+        <span class="disp" style="font-size:18px">${fmtMD(d.date)}</span>
+        <span style="color:${(d.wd===0||d.wd===6)?'var(--coral)':'var(--sub)'};font-size:13px;font-weight:700">${WEEKDAYS[d.wd]}요일</span>
+        ${d.off===0?`<span class="chip" style="font-size:11px;color:#1a1206;background:var(--amber);padding:2px 7px;border-radius:6px">TODAY</span>`:""}
+        <span style="margin-left:auto;color:var(--muted);font-size:12px">${mins}분</span>
+      </div>${rows}</div>`;
+  }).join("");
+
+  v.innerHTML=`
+  <div style="padding:4px 16px 8px">
+    <div class="fade" style="background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="color:var(--sub);font-size:13px;font-weight:700">전체 진행률</span>
+        <span id="pct" class="disp" style="font-size:26px;color:var(--mint)">${pct}%</span></div>
+      <div style="height:9px;background:var(--ink2);border-radius:99px;overflow:hidden;margin-top:8px">
+        <div id="bar" style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--mint),#2bc88c);border-radius:99px;transition:width .4s"></div></div>
+      <div id="cnt" style="color:var(--muted);font-size:12px;margin-top:6px">${doneN} / ${total} 항목 완료</div>
+    </div>
+    <div class="scroll" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px">${chips}</div>
+    <button id="copy" style="width:100%;background:var(--card2);color:var(--txt);border-radius:12px;padding:10px;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);font-size:13px">⧉ 계획 텍스트로 복사</button>
+    <div>${cards}</div>
+    <div style="text-align:center;color:var(--muted);font-size:12px;padding:10px 0 4px">끝까지 해냈다면 — <span style="color:var(--amber)">이미 절반은 이긴 거야 🔥</span></div>
+  </div>`;
+
+  // bind checkbox toggles
+  v.querySelectorAll(".taskrow").forEach(row=>row.addEventListener("click",()=>{
+    const id=row.dataset.id; S.done[id]=!S.done[id]; save();
+    row.classList.toggle("done",!!S.done[id]);
+    row.querySelector(".cbox").textContent=S.done[id]?"✓":"";
+    // update progress
+    const p2=buildPlan(); const tot=p2.days.reduce((a,d)=>a+d.tasks.length,0);
+    const dn=p2.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+    const pc=tot?Math.round(dn/tot*100):0;
+    document.getElementById("pct").textContent=pc+"%";
+    document.getElementById("bar").style.width=pc+"%";
+    document.getElementById("cnt").textContent=dn+" / "+tot+" 항목 완료";
+  }));
+  document.getElementById("copy").addEventListener("click",()=>copyPlan(plan));
+}
+function copyPlan(plan){
+  let txt="📚 기말 학습 계획\n\n";
+  plan.summary.forEach(s=>txt+="· "+s.name+": D-"+(s.dday===0?"DAY":s.dday)+"\n");
+  txt+="\n";
+  plan.days.forEach(d=>{ if(!d.tasks.length)return;
+    txt+="["+fmtMD(d.date)+"("+WEEKDAYS[d.wd]+")]\n";
+    d.tasks.forEach(t=>txt+="  - "+t.subject+" · "+PHASES[t.phase].ko+" · "+t.minutes+"분\n");});
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>alert("계획을 복사했어요! 카톡·노션 어디든 붙여넣기 하세요.")).catch(()=>prompt("아래 내용을 길게 눌러 복사하세요:",txt));
+  }else prompt("아래 내용을 길게 눌러 복사하세요:",txt);
+}
+
+/* ---------- boot ---------- */
+document.querySelectorAll(".tabbtn").forEach(b=>b.addEventListener("click",()=>{S.tab=b.dataset.tab;render();}));
+render();
+</script>
+</body>
+</html>
