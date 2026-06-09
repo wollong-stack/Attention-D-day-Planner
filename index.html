@@ -111,11 +111,14 @@ try{ if(cfgReady && window.supabase) db=window.supabase.createClient(CONFIG.SUPA
 
 let S=load()||{
   id:newId(), nickname:"",
-  weekdayHours:3, weekendHours:6,
+  examStart:"", weekdayHours:3, weekendHours:6,
   subjects:["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""})),
-  done:{}, generated:false, tab:"setup"
+  done:{}, aiPlan:{}, generated:false, tab:"setup"
 };
 if(!S.id)S.id=newId();
+if(S.examStart===undefined)S.examStart="";
+if(!S.aiPlan)S.aiPlan={};
+let weekOffset=0, aiBusy=false;
 
 function newId(){try{return crypto.randomUUID();}catch(e){return "id-"+Date.now()+"-"+Math.random().toString(36).slice(2);}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
@@ -163,32 +166,38 @@ function taskHint(subject,phase){
   if(phase==="solve")return eng?subject+" 기출/예상문제 + 본문 변형 대비":subject+" 기출·예상문제 풀이 + 오답 체크";
   return eng?subject+" 오답 재점검 + 어휘·표현 암기 마무리":subject+" 오답 재점검 + 암기 마무리";
 }
+function effDate(s){return parseDate(s.date)||parseDate(S.examStart);}
 function buildPlan(){
   const today=todayMid();
-  const subs=S.subjects.map((s,i)=>({...s,idx:i,d:parseDate(s.date)}))
+  const subs=S.subjects.map(s=>({name:s.name,score:s.score,scope:s.scope,d:effDate(s)}))
     .filter(s=>s.name.trim()&&s.d&&dayDiff(today,s.d)>=0);
   if(!subs.length)return{days:[],summary:[]};
   const last=Math.max(...subs.map(s=>dayDiff(today,s.d)));
   const summary=[...subs].sort((a,b)=>a.d-b.d).map(s=>({name:s.name,dday:dayDiff(today,s.d)}));
+  // '에이징 스케줄러': 우선순위가 높을수록 자주 나오되, 모든 과목이 며칠 안에 한 번씩은 돌아오도록 보장
+  const lastTouched={}; subs.forEach(s=>lastTouched[s.name]=-999);
   const days=[];
   for(let off=0;off<=last;off++){
     const date=new Date(today);date.setDate(today.getDate()+off);
     const wd=date.getDay(); const weekend=(wd===0||wd===6);
     const dayMin=(weekend?S.weekendHours:S.weekdayHours)*60;
-    let active=subs.map(s=>{
+    let cand=subs.map(s=>{
       const remain=dayDiff(date,s.d); if(remain<0)return null;
-      const span=dayDiff(today,s.d);
+      const span=Math.max(1,dayDiff(today,s.d));
       let phase; if(remain<=2)phase="final";
       else if(remain<=Math.max(3,Math.round(span*0.45)))phase="solve"; else phase="read";
       const weakness=6-(s.score||3); const urgency=1/Math.max(1,remain);
-      return {name:s.name,phase,weight:weakness*(1+2*urgency),remain};
+      const prio=weakness*(1+2*urgency);
+      return {name:s.name,phase,prio,remain,due:(off-lastTouched[s.name])*prio};
     }).filter(Boolean);
-    if(!active.length||dayMin<=0){days.push({off,date,wd,tasks:[]});continue;}
-    active.sort((a,b)=>b.weight-a.weight);
-    const top=active.slice(0,3); const sum=top.reduce((a,b)=>a+b.weight,0);
-    const tasks=top.map((t,i)=>{
-      let m=Math.round((dayMin*(t.weight/sum))/10)*10; m=Math.max(20,m);
-      return {id:off+"-"+i,subject:t.name,phase:t.phase,minutes:m,hint:taskHint(t.name,t.phase)};
+    if(!cand.length||dayMin<=0){days.push({off,date,wd,tasks:[]});continue;}
+    cand.sort((a,b)=>b.due-a.due);
+    const top=cand.slice(0,3);
+    top.forEach(t=>lastTouched[t.name]=off);
+    const sumP=top.reduce((a,b)=>a+b.prio,0);
+    const tasks=top.map(t=>{
+      let m=Math.round((dayMin*(t.prio/sumP))/10)*10; m=Math.max(20,m);
+      return {id:off+"-"+t.name,subject:t.name,phase:t.phase,minutes:m,hint:taskHint(t.name,t.phase)};
     });
     days.push({off,date,wd,tasks});
   }
@@ -240,6 +249,11 @@ function renderSetup(){
   v.innerHTML=`
   <div style="padding:4px 16px 8px">
     <div style="margin-bottom:22px">
+      ${secHead("📌","시험 시작(예상) 날짜")}
+      <input id="exam-start" class="inp" type="date" value="${esc(S.examStart||"")}" style="color-scheme:dark">
+      <div style="color:var(--muted);font-size:12px;margin-top:6px;line-height:1.55">아직 시간표가 안 나왔으면 대략의 시작일만 넣어도 돼요. 과목 날짜를 비워두면 이 날짜를 기준으로 잡고, 나중에 과목별로 정확히 바꿀 수 있어요.</div>
+    </div>
+    <div style="margin-bottom:22px">
       ${secHead("📅","과목 · 시험일 · 자신감")}
       <div id="subs"></div>
       <button id="addsub" style="width:100%;background:var(--card2);color:var(--txt);border-radius:14px;padding:12px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--line)">＋ 과목 추가</button>
@@ -253,6 +267,7 @@ function renderSetup(){
     <button id="reset" style="width:100%;background:transparent;color:var(--muted);padding:14px;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px">↻ 전체 초기화</button>
   </div>`;
   renderSubs();
+  document.getElementById("exam-start").addEventListener("change",e=>{S.examStart=e.target.value;syncUp();renderSubs();});
   document.getElementById("addsub").addEventListener("click",()=>{S.subjects.push({name:"",date:"",score:3,scope:""});renderSubs();syncUp();});
   document.getElementById("gen").addEventListener("click",generate);
   document.getElementById("reset").addEventListener("click",reset);
@@ -273,7 +288,8 @@ function renderSubs(){
   const today=todayMid();
   const c=document.getElementById("subs"); c.innerHTML="";
   S.subjects.forEach((s,i)=>{
-    const d=parseDate(s.date); const dd=d?dayDiff(today,d):null;
+    const own=parseDate(s.date); const ed=own||parseDate(S.examStart);
+    const dd=ed?dayDiff(today,ed):null; const fb=!own&&!!parseDate(S.examStart);
     const el=document.createElement("div"); el.className="subcard";
     el.innerHTML=`
       <div style="display:flex;gap:8px;align-items:center">
@@ -281,24 +297,19 @@ function renderSubs(){
         <input class="inp s-date" data-i="${i}" type="date" value="${esc(s.date)}" style="flex:1;color-scheme:dark">
         <button class="s-del" data-i="${i}" style="background:transparent;color:var(--muted);padding:6px;font-size:18px">✕</button>
       </div>
-      <div class="s-dd" style="margin-top:8px;font-size:12px">${dd!==null&&dd>=0?`<span class="chip" style="color:${dd<=3?'var(--coral)':'var(--amber)'}">D-${dd===0?"DAY":dd}</span>`:""}</div>
+      <div class="s-dd" style="margin-top:8px;font-size:12px">${dd!==null&&dd>=0?`<span class="chip" style="color:${dd<=3?'var(--coral)':'var(--amber)'}">D-${dd===0?"DAY":dd}${fb?" (예상)":""}</span>`:""}</div>
       <div style="margin-top:10px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px">
           <span>이 과목 자신감</span><span class="s-slab" style="color:var(--txt);font-weight:800">${SCORE_LABELS[s.score]}</span>
         </div>
         <input class="range s-score" data-i="${i}" type="range" min="1" max="5" value="${s.score}">
       </div>
-      <input class="inp s-scope" data-i="${i}" placeholder="시험 범위 메모 (선택)" value="${esc(s.scope)}" style="margin-top:10px;font-size:13px">`;
+      <input class="inp s-scope" data-i="${i}" placeholder="시험 범위 (적으면 AI가 날짜별로 분배해줘요)" value="${esc(s.scope)}" style="margin-top:10px;font-size:13px">`;
     c.appendChild(el);
   });
   c.querySelectorAll(".s-name").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].name=e.target.value;syncUp();}));
   c.querySelectorAll(".s-scope").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].scope=e.target.value;syncUp();}));
-  c.querySelectorAll(".s-date").forEach(el=>el.addEventListener("change",e=>{
-    const i=+e.target.dataset.i; S.subjects[i].date=e.target.value; syncUp();
-    const card=e.target.closest(".subcard"); const dd=parseDate(e.target.value);
-    const n=dd?dayDiff(todayMid(),dd):null;
-    card.querySelector(".s-dd").innerHTML=(n!==null&&n>=0)?`<span class="chip" style="color:${n<=3?'var(--coral)':'var(--amber)'}">D-${n===0?"DAY":n}</span>`:"";
-  }));
+  c.querySelectorAll(".s-date").forEach(el=>el.addEventListener("change",e=>{S.subjects[+e.target.dataset.i].date=e.target.value;syncUp();renderSubs();}));
   c.querySelectorAll(".s-score").forEach(el=>el.addEventListener("input",e=>{
     const i=+e.target.dataset.i,v=+e.target.value; S.subjects[i].score=v; syncUp();
     e.target.closest(".subcard").querySelector(".s-slab").textContent=SCORE_LABELS[v];
@@ -306,15 +317,16 @@ function renderSubs(){
   c.querySelectorAll(".s-del").forEach(el=>el.addEventListener("click",e=>{S.subjects.splice(+e.target.dataset.i,1);renderSubs();syncUp();}));
 }
 function generate(){
-  const ok=S.subjects.some(s=>s.name.trim()&&parseDate(s.date)&&dayDiff(todayMid(),parseDate(s.date))>=0);
-  if(!ok){alert("과목명과 시험 날짜를 하나 이상 입력해 주세요. (오늘 이후 날짜)");return;}
-  S.generated=true; S.tab="plan"; syncUp(); render();
+  const today=todayMid();
+  const ok=S.subjects.some(s=>{const d=parseDate(s.date)||parseDate(S.examStart);return s.name.trim()&&d&&dayDiff(today,d)>=0;});
+  if(!ok){alert("과목명과, '시험 시작(예상) 날짜' 또는 과목별 시험일을 하나 이상 입력해 주세요.");return;}
+  S.generated=true; S.tab="plan"; weekOffset=0; syncUp(); render();
 }
 function reset(){
   if(!confirm("계획·진행 상황을 초기화할까요? (닉네임은 유지됩니다)"))return;
-  S.weekdayHours=3;S.weekendHours=6;
+  S.examStart="";S.weekdayHours=3;S.weekendHours=6;
   S.subjects=["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""}));
-  S.done={};S.generated=false;S.tab="setup";
+  S.done={};S.aiPlan={};S.generated=false;S.tab="setup";weekOffset=0;
   syncUp(); render();
 }
 
@@ -325,18 +337,30 @@ function renderPlan(){
     v.innerHTML=`<div class="fade" style="text-align:center;padding:60px 30px">
       <div style="font-size:40px;margin-bottom:12px">🗓️</div>
       <div style="font-weight:800;font-size:16px">아직 만들어진 계획이 없어요.</div>
-      <div style="color:var(--sub);font-size:13px;margin-top:6px">설정에서 과목·시험일을 입력하고 계획을 생성해 주세요.</div>
+      <div style="color:var(--sub);font-size:13px;margin-top:6px">설정에서 과목과 '시험 시작(예상) 날짜'를 넣고 계획을 만들어 주세요.</div>
       <button id="goset" style="margin-top:18px;background:var(--amber);color:#1a1206;border-radius:12px;padding:10px 20px">설정으로 가기 ›</button></div>`;
     document.getElementById("goset").addEventListener("click",()=>{S.tab="setup";render();});
     return;
   }
-  const total=plan.days.reduce((a,d)=>a+d.tasks.length,0);
-  const doneN=plan.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-  const pct=total?Math.round(doneN/total*100):0;
+  const lastOff=plan.days[plan.days.length-1].off;
+  const maxWeek=Math.floor(lastOff/7);
+  if(weekOffset>maxWeek)weekOffset=maxWeek; if(weekOffset<0)weekOffset=0;
+  const start=weekOffset*7, end=start+6;
+  const weekDays=plan.days.filter(d=>d.off>=start&&d.off<=end);
+  const oTotal=plan.days.reduce((a,d)=>a+d.tasks.length,0);
+  const oDone=plan.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+  const oPct=oTotal?Math.round(oDone/oTotal*100):0;
+  const wTotal=weekDays.reduce((a,d)=>a+d.tasks.length,0);
+  const wDone=weekDays.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+  const wPct=wTotal?Math.round(wDone/wTotal*100):0;
+  const sD=new Date(todayMid());sD.setDate(sD.getDate()+start);
+  const eD=new Date(todayMid());eD.setDate(eD.getDate()+end);
+  const weekLabel=weekOffset===0?"이번 주":(weekOffset+"주 후");
+
   let chips=plan.summary.map(s=>`<div style="flex:0 0 auto;background:var(--card2);border:1px solid ${s.dday<=3?'var(--coral)':'var(--line)'};border-radius:12px;padding:8px 12px">
       <div style="font-size:12px;color:var(--sub);font-weight:700">${esc(s.name)}</div>
       <div class="chip" style="font-size:14px;color:${s.dday<=3?'var(--coral)':'var(--amber)'}">D-${s.dday===0?"DAY":s.dday}</div></div>`).join("");
-  let cards=plan.days.filter(d=>d.tasks.length).map(d=>{
+  let cards=weekDays.filter(d=>d.tasks.length).map(d=>{
     const mins=d.tasks.reduce((a,t)=>a+t.minutes,0);
     const rows=d.tasks.map(t=>{
       const ph=PHASES[t.phase]; const done=!!S.done[t.id];
@@ -348,7 +372,7 @@ function renderPlan(){
             <span class="chip" style="font-size:11px;color:${ph.color};background:${ph.bg};padding:2px 7px;border-radius:6px">${ph.ko}</span>
             <span class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${t.minutes}분</span>
           </div>
-          <div style="font-size:12.5px;color:var(--sub);margin-top:3px">${esc(t.hint)}</div>
+          <div style="font-size:12.5px;color:${(S.aiPlan&&S.aiPlan[t.id])?'var(--mint)':'var(--sub)'};margin-top:3px">${esc((S.aiPlan&&S.aiPlan[t.id])?("✨ "+S.aiPlan[t.id]):t.hint)}</div>
         </div></div>`;
     }).join("");
     return `<div class="daycard" style="margin-bottom:16px">
@@ -359,31 +383,98 @@ function renderPlan(){
         <span style="margin-left:auto;color:var(--muted);font-size:12px">${mins}분</span>
       </div>${rows}</div>`;
   }).join("");
+  const noWeek=`<div style="text-align:center;color:var(--sub);padding:40px 20px">이 주(週)엔 예정된 학습이 없어요.<br><span style="font-size:13px">다른 주를 확인하거나, 설정에서 날짜를 조정해 보세요.</span></div>`;
+
   v.innerHTML=`
   <div style="padding:4px 16px 8px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <button id="wprev" style="background:var(--card2);border:1px solid var(--line);color:${weekOffset>0?'var(--txt)':'var(--muted)'};border-radius:10px;width:42px;height:42px;font-size:15px">◀</button>
+      <div style="flex:1;text-align:center">
+        <div class="disp" style="font-size:17px">${fmtMD(sD)} ~ ${fmtMD(eD)}</div>
+        <div style="color:var(--amber);font-size:12px;font-weight:700">${weekLabel}</div>
+      </div>
+      <button id="wnext" style="background:var(--card2);border:1px solid var(--line);color:${weekOffset<maxWeek?'var(--txt)':'var(--muted)'};border-radius:10px;width:42px;height:42px;font-size:15px">▶</button>
+    </div>
     <div class="fade" style="background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="color:var(--sub);font-size:13px;font-weight:700">전체 진행률</span>
-        <span id="pct" class="disp" style="font-size:26px;color:var(--mint)">${pct}%</span></div>
+        <span style="color:var(--sub);font-size:13px;font-weight:700">이번 주 진행률</span>
+        <span id="pct" class="disp" style="font-size:26px;color:var(--mint)">${wPct}%</span></div>
       <div style="height:9px;background:var(--ink2);border-radius:99px;overflow:hidden;margin-top:8px">
-        <div id="bar" style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--mint),#2bc88c);border-radius:99px;transition:width .4s"></div></div>
-      <div id="cnt" style="color:var(--muted);font-size:12px;margin-top:6px">${doneN} / ${total} 항목 완료</div>
+        <div id="bar" style="width:${wPct}%;height:100%;background:linear-gradient(90deg,var(--mint),#2bc88c);border-radius:99px;transition:width .4s"></div></div>
+      <div id="cnt" style="color:var(--muted);font-size:12px;margin-top:6px">${wDone} / ${wTotal} 항목 · 전체 ${oPct}%</div>
     </div>
     <div class="scroll" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px">${chips}</div>
-    <div>${cards}</div>
-    <div style="text-align:center;color:var(--muted);font-size:12px;padding:10px 0 4px">끝까지 해냈다면 — <span style="color:var(--amber)">이미 절반은 이긴 거야 🔥</span></div>
+    <button id="aifill" style="width:100%;background:var(--card2);color:var(--txt);border:1px solid var(--violet);border-radius:12px;padding:11px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px">✨ AI로 학습 분량 채우기</button>
+    <div style="color:var(--muted);font-size:11px;text-align:center;margin-bottom:14px;line-height:1.5">설정에서 과목별 '시험 범위'를 적으면, 그 범위를 날짜에 맞춰 구체적으로 나눠줍니다.</div>
+    <div>${cards||noWeek}</div>
+    <div style="text-align:center;color:var(--muted);font-size:12px;padding:10px 0 4px">이번 주만 끝내도 충분해 — <span style="color:var(--amber)">한 주씩 쌓는 거야 🔥</span></div>
   </div>`;
+
+  const wp=document.getElementById("wprev"), wn=document.getElementById("wnext");
+  wp.addEventListener("click",()=>{if(weekOffset>0){weekOffset--;renderPlan();}});
+  wn.addEventListener("click",()=>{if(weekOffset<maxWeek){weekOffset++;renderPlan();}});
+  const af=document.getElementById("aifill");
+  if(af){ if(aiBusy)af.textContent="✨ 분배 중…"; af.addEventListener("click",aiFillScope); }
   v.querySelectorAll(".taskrow").forEach(row=>row.addEventListener("click",()=>{
     const id=row.dataset.id; S.done[id]=!S.done[id]; syncUp();
     row.classList.toggle("done",!!S.done[id]);
     row.querySelector(".cbox").textContent=S.done[id]?"✓":"";
-    const p2=buildPlan(); const tot=p2.days.reduce((a,d)=>a+d.tasks.length,0);
-    const dn=p2.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-    const pc=tot?Math.round(dn/tot*100):0;
-    document.getElementById("pct").textContent=pc+"%";
-    document.getElementById("bar").style.width=pc+"%";
-    document.getElementById("cnt").textContent=dn+" / "+tot+" 항목 완료";
+    const p2=buildPlan();
+    const wd2=p2.days.filter(d=>d.off>=start&&d.off<=end);
+    const wt=wd2.reduce((a,d)=>a+d.tasks.length,0);
+    const wdn=wd2.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+    const wpc=wt?Math.round(wdn/wt*100):0;
+    const ot=p2.days.reduce((a,d)=>a+d.tasks.length,0);
+    const odn=p2.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
+    const opc=ot?Math.round(odn/ot*100):0;
+    document.getElementById("pct").textContent=wpc+"%";
+    document.getElementById("bar").style.width=wpc+"%";
+    document.getElementById("cnt").textContent=wdn+" / "+wt+" 항목 · 전체 "+opc+"%";
   }));
+}
+
+/* ----- AI 범위 분배 ----- */
+async function aiFillScope(){
+  if(aiBusy)return;
+  if(!cfgReady){alert("코치 서버 연결이 필요해요. (설정의 SUPABASE 키/주소 확인)");return;}
+  const plan=buildPlan();
+  const bySubject={};
+  plan.days.forEach(d=>d.tasks.forEach(t=>{
+    const subj=S.subjects.find(s=>s.name===t.subject);
+    if(subj && subj.scope && subj.scope.trim()){
+      (bySubject[t.subject]=bySubject[t.subject]||[]).push({id:t.id,date:fmtMD(d.date)+"("+WEEKDAYS[d.wd]+")",단계:PHASES[t.phase].ko});
+    }
+  }));
+  const names=Object.keys(bySubject);
+  if(!names.length){alert("먼저 '설정'에서 과목별 '시험 범위'를 입력한 뒤 계획을 만들어 주세요.");return;}
+
+  aiBusy=true;
+  const btn=document.getElementById("aifill"); if(btn)btn.disabled=true;
+  const result={...(S.aiPlan||{})};
+  let failed=0;
+  for(let i=0;i<names.length;i++){
+    const name=names[i], days=bySubject[name];
+    const subj=S.subjects.find(s=>s.name===name);
+    if(btn)btn.textContent="✨ 분배 중… "+(i+1)+"/"+names.length+" ("+name+")";
+    const sys=`너는 학습 분량 배분 도우미다. 학생의 '시험 범위'를 주어진 학습일들에 빠짐없이 고르게 나눠 배정한다.
+각 날의 '단계'에 맞춰 구체적이고 짧은 할 일 한 줄(25자 이내)을 만든다 — 1회독: 진도/내용 정리, 문제풀이: 그 범위의 문제 풀이, 마무리: 복습·오답.
+반드시 JSON 객체만 출력한다. 형식 {"학습일ID":"할 일", ...}. 코드블록·설명 금지.`;
+    const user=`과목: ${name}\n시험 범위: ${subj.scope}\n학습일 목록(JSON): ${JSON.stringify(days)}\n각 학습일 ID마다 할 일을 배정해 JSON으로만 답해줘.`;
+    try{
+      const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",
+        headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},
+        body:JSON.stringify({system:sys,messages:[{role:"user",content:user}]})});
+      const d=await res.json();
+      let txt=(d.text||"").trim();
+      const a=txt.indexOf("{"), b=txt.lastIndexOf("}");
+      if(a>=0&&b>a)txt=txt.slice(a,b+1);
+      const obj=JSON.parse(txt);
+      Object.keys(obj).forEach(k=>{ if(typeof obj[k]==="string")result[k]=obj[k]; });
+    }catch(e){ failed++; }
+  }
+  S.aiPlan=result; aiBusy=false; syncUp();
+  if(failed)setTimeout(()=>alert(failed+"개 과목은 분배에 실패했어요. 잠시 후 버튼을 다시 눌러보세요."),100);
+  render();
 }
 
 /* ----- AI Coach ----- */
