@@ -79,6 +79,7 @@ input::placeholder{color:var(--muted);}
 <div id="nav" style="display:none"><div>
   <button class="tabbtn" data-tab="setup"><span class="ic">⚙️</span>설정</button>
   <button class="tabbtn" data-tab="plan"><span class="ic">🗓️</span>내 계획</button>
+  <button class="tabbtn" data-tab="reflect"><span class="ic">📝</span>회고</button>
   <button class="tabbtn" data-tab="coach"><span class="ic">💬</span>AI 코치</button>
 </div></div>
 
@@ -113,12 +114,13 @@ let S=load()||{
   id:newId(), nickname:"",
   examStart:"", weekdayHours:3, weekendHours:6,
   subjects:["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""})),
-  done:{}, aiPlan:{}, generated:false, tab:"setup"
+  done:{}, aiPlan:{}, reflections:[], generated:false, tab:"setup"
 };
 if(!S.id)S.id=newId();
 if(S.examStart===undefined)S.examStart="";
 if(!S.aiPlan)S.aiPlan={};
-let weekOffset=0, aiBusy=false;
+if(!S.reflections)S.reflections=[];
+let weekOffset=0, aiBusy=false, reflectRating=3;
 
 function newId(){try{return crypto.randomUUID();}catch(e){return "id-"+Date.now()+"-"+Math.random().toString(36).slice(2);}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
@@ -222,6 +224,7 @@ function render(){
   renderHeader(); renderNav();
   if(S.tab==="setup")renderSetup();
   else if(S.tab==="plan")renderPlan();
+  else if(S.tab==="reflect")renderReflect();
   else renderCoach();
 }
 
@@ -326,7 +329,7 @@ function reset(){
   if(!confirm("계획·진행 상황을 초기화할까요? (닉네임은 유지됩니다)"))return;
   S.examStart="";S.weekdayHours=3;S.weekendHours=6;
   S.subjects=["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""}));
-  S.done={};S.aiPlan={};S.generated=false;S.tab="setup";weekOffset=0;
+  S.done={};S.aiPlan={};S.reflections=[];S.generated=false;S.tab="setup";weekOffset=0;
   syncUp(); render();
 }
 
@@ -475,6 +478,66 @@ async function aiFillScope(){
   S.aiPlan=result; aiBusy=false; syncUp();
   if(failed)setTimeout(()=>alert(failed+"개 과목은 분배에 실패했어요. 잠시 후 버튼을 다시 눌러보세요."),100);
   render();
+}
+
+/* ----- 주간 회고 ----- */
+const REF_EMO=["","😣","😕","😐","🙂","😄"];
+function renderReflect(){
+  const v=document.getElementById("view");
+  const list=(S.reflections||[]).slice().reverse();
+  const hist=list.map(r=>{
+    const d=new Date(r.t);
+    return `<div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-size:18px">${REF_EMO[r.rating]||"🙂"}</span>
+        <span style="font-weight:800;font-size:13px">${(d.getMonth()+1)+"/"+d.getDate()} 회고</span>
+        <span style="margin-left:auto;color:var(--muted);font-size:11px">${WEEKDAYS[d.getDay()]}요일</span>
+      </div>
+      ${r.good?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--mint)">잘된 점</span> · ${esc(r.good)}</div>`:""}
+      ${r.hard?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--coral)">아쉬운 점</span> · ${esc(r.hard)}</div>`:""}
+      ${r.change?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--amber)">다음 주 변화</span> · ${esc(r.change)}</div>`:""}
+      ${r.coach==="__pending__"?`<div style="font-size:12.5px;color:var(--violet);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">💬 코치가 읽는 중…</div>`:(r.coach?`<div style="font-size:12.5px;color:var(--violet);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">💬 코치 · ${esc(r.coach)}</div>`:"")}
+    </div>`;
+  }).join("");
+  const emo=[1,2,3,4,5].map(n=>`<button class="ref-emo" data-n="${n}" style="flex:1;background:${reflectRating===n?'var(--card2)':'transparent'};border:1px solid ${reflectRating===n?'var(--amber)':'var(--line)'};border-radius:12px;padding:10px 0;font-size:22px">${REF_EMO[n]}</button>`).join("");
+  v.innerHTML=`
+  <div style="padding:4px 16px 8px">
+    <div style="margin:6px 0 18px">
+      <h2 class="disp" style="font-size:23px;margin-bottom:4px">이번 주 <span class="hl">회고</span></h2>
+      <div style="color:var(--sub);font-size:13px">한 주를 돌아보고, 다음 주를 스스로 조정해 보자.</div>
+    </div>
+    <div style="color:var(--sub);font-size:13px;font-weight:700;margin-bottom:8px">이번 주 어땠어?</div>
+    <div style="display:flex;gap:6px;margin-bottom:18px">${emo}</div>
+    <div style="color:var(--mint);font-size:13px;font-weight:700;margin-bottom:6px">✅ 이번 주 잘된 점</div>
+    <textarea id="r-good" class="inp" rows="2" placeholder="작은 거라도 좋아" style="resize:none;margin-bottom:14px"></textarea>
+    <div style="color:var(--coral);font-size:13px;font-weight:700;margin-bottom:6px">🤔 아쉬운 점과 그 이유</div>
+    <textarea id="r-hard" class="inp" rows="2" placeholder="왜 그랬을까?" style="resize:none;margin-bottom:14px"></textarea>
+    <div style="color:var(--amber);font-size:13px;font-weight:700;margin-bottom:6px">🎯 다음 주에 바꿀 한 가지</div>
+    <textarea id="r-change" class="inp" rows="2" placeholder="딱 하나만 정하자" style="resize:none;margin-bottom:18px"></textarea>
+    <button id="r-save" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--amber-d));color:#1a1206;border-radius:16px;padding:15px;font-size:15px">회고 저장하기</button>
+    ${list.length?`<div style="margin-top:28px;color:var(--sub);font-size:13px;font-weight:700;margin-bottom:10px">지난 회고</div>${hist}`:""}
+  </div>`;
+  v.querySelectorAll(".ref-emo").forEach(b=>b.addEventListener("click",()=>{reflectRating=+b.dataset.n;renderReflect();}));
+  document.getElementById("r-save").addEventListener("click",saveReflection);
+}
+async function saveReflection(){
+  const good=(document.getElementById("r-good").value||"").trim();
+  const hard=(document.getElementById("r-hard").value||"").trim();
+  const change=(document.getElementById("r-change").value||"").trim();
+  if(!good&&!hard&&!change){alert("한 줄이라도 적어보자 — 돌아보는 게 핵심이야!");return;}
+  const entry={t:new Date().toISOString(),rating:reflectRating,good,hard,change,coach:cfgReady?"__pending__":""};
+  S.reflections=S.reflections||[]; S.reflections.push(entry);
+  reflectRating=3; syncUp(); render();
+  if(cfgReady){
+    try{
+      const sys=`너는 어텐션 학원의 따뜻한 학습 코치다. 학생이 방금 주간 회고를 적었다. 자책하지 않게 받아주고, 노력을 인정하고, 다음 주 다짐을 응원하며, 아주 작은 행동 제안 하나로 마무리한다. 반말로 2~3문장, 짧고 따뜻하게.`;
+      const user=`주간 회고\n잘된 점: ${good||"(없음)"}\n아쉬운 점/이유: ${hard||"(없음)"}\n다음 주 변화: ${change||"(없음)"}`;
+      const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},body:JSON.stringify({system:sys,messages:[{role:"user",content:user}]})});
+      const d=await res.json();
+      entry.coach=(d.text&&d.text.trim())?d.text.trim():"";
+    }catch(e){ entry.coach=""; }
+    syncUp(); if(S.tab==="reflect")render();
+  }
 }
 
 /* ----- AI Coach ----- */

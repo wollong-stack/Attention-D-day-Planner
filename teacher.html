@@ -43,7 +43,7 @@ button:active{transform:scale(.97);}
 const CONFIG = {
   SUPABASE_URL   : "https://dukfcfjlmhfkrihfitbi.supabase.co",
   SUPABASE_KEY   : "sb_publishable_twHlTdXtEmF3HOwM0h8ydA_zrMcqDJu",
-  TEACHER_PASSCODE: "dlxodyd614614!",
+  TEACHER_PASSCODE: "dlxodyd614614!",   // 학생에게 알려주지 않는 임의 문자열
 };
 /* ============================================================ */
 
@@ -105,9 +105,11 @@ async function loadAndRender(){
   }catch(e){ document.getElementById("root").innerHTML=`<div style="text-align:center;color:var(--coral);padding:80px 20px">데이터를 불러오지 못했어요.<br><span style="color:var(--sub);font-size:13px">CONFIG의 주소·키를 확인하거나, 학생이 아직 한 명도 없을 수 있어요.</span></div>`; return; }
   renderDash();
 }
+const REF_EMO=["","😣","😕","😐","🙂","😄"];
 function renderDash(){
   const list=cache.map(st=>{const s=status(st);const pct=st.total?Math.round(st.progress/st.total*100):0;
-    return {...st,_s:s,_pct:pct,_dday:nearestDday(st.data)};});
+    const refs=(st.data&&st.data.reflections)||[]; const _refl=refs.length?refs[refs.length-1]:null;
+    return {...st,_s:s,_pct:pct,_dday:nearestDday(st.data),_refl};});
   // sort
   if(sortBy==="behind") list.sort((a,b)=>(a._pct-b._pct)|| (new Date(a.updated_at)-new Date(b.updated_at)));
   else if(sortBy==="recent") list.sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at));
@@ -131,6 +133,9 @@ function renderDash(){
           <div class="bar" style="flex:1"><div class="barfill" style="width:${st._pct}%;background:${st._s.color}"></div></div>
           <span class="mono" style="font-size:13px;color:var(--txt);font-weight:700;width:42px;text-align:right">${st._pct}%</span>
         </div>
+        ${st._refl?`<div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--sub);line-height:1.55">
+          <span style="font-size:14px">${REF_EMO[st._refl.rating]||"🙂"}</span>${st._refl.hard?` <span style="color:var(--coral)">아쉬움</span> ${esc(st._refl.hard)}`:""}${st._refl.change?`<br><span style="color:var(--amber)">다음주</span> ${esc(st._refl.change)}`:""}
+        </div>`:""}
       </div>
     </div>`).join("")
     : `<div style="text-align:center;color:var(--sub);padding:50px 20px">아직 시작한 학생이 없어요.<br><span style="font-size:13px">학생들에게 링크를 보내면 여기에 실시간으로 나타납니다.</span></div>`;
