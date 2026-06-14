@@ -35,14 +35,10 @@ body{font-family:var(--fb);color:var(--txt);min-height:100vh;
 @keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 button{cursor:pointer;border:none;font-family:var(--fb);font-weight:800;transition:transform .12s ease,filter .2s;}
 button:active{transform:scale(.97);}
-input{font-family:var(--fb);}
-input::placeholder{color:var(--muted);}
+input,textarea{font-family:var(--fb);}
+input::placeholder,textarea::placeholder{color:var(--muted);}
 .inp{width:100%;background:var(--ink2);border:1px solid var(--line);border-radius:12px;
   padding:12px 14px;color:var(--txt);font-size:15px;outline:none;}
-.range{-webkit-appearance:none;appearance:none;height:6px;border-radius:99px;background:var(--line);outline:none;width:100%;}
-.range::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#fff,var(--amber) 60%);cursor:pointer;box-shadow:0 0 0 4px rgba(255,194,61,.18);}
-.range::-moz-range-thumb{width:22px;height:22px;border:none;border-radius:50%;background:var(--amber);cursor:pointer;}
 #nav{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(13,16,21,.86);
   backdrop-filter:blur(14px);border-top:1px solid var(--line);}
 #nav>div{max-width:520px;margin:0 auto;display:flex;}
@@ -54,14 +50,15 @@ input::placeholder{color:var(--muted);}
 .scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
 .subcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px;}
 .chip{font-family:var(--fm);font-weight:700;}
-.daycard,.taskrow{margin-bottom:8px;}
 .taskrow{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);
-  border-radius:14px;padding:12px 14px;cursor:pointer;transition:opacity .2s;}
+  border-radius:14px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:opacity .2s;}
 .taskrow.done{opacity:.55;}
 .taskrow.done .sname{text-decoration:line-through;}
 .cbox{width:24px;height:24px;border-radius:7px;border:2px solid var(--line);flex:0 0 auto;
   display:flex;align-items:center;justify-content:center;font-size:14px;color:#0d1015;font-weight:900;}
 .taskrow.done .cbox{border-color:var(--mint);background:var(--mint);}
+.seg{flex:1;background:transparent;border:1px solid var(--line);color:var(--sub);border-radius:10px;padding:9px 0;font-size:13px;font-weight:700;}
+.seg.on{background:var(--card2);border-color:var(--amber);color:var(--amber);}
 #sync{position:fixed;top:8px;right:10px;z-index:30;font-size:11px;color:var(--muted);font-family:var(--fm);}
 .bubble{max-width:82%;white-space:pre-wrap;line-height:1.5;font-size:14.5px;padding:11px 14px;border-radius:16px;}
 .typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--sub);margin:0 2px;animation:bd 1.2s infinite;}
@@ -78,146 +75,136 @@ input::placeholder{color:var(--muted);}
 </div>
 <div id="nav" style="display:none"><div>
   <button class="tabbtn" data-tab="setup"><span class="ic">⚙️</span>설정</button>
-  <button class="tabbtn" data-tab="plan"><span class="ic">🗓️</span>내 계획</button>
+  <button class="tabbtn" data-tab="plan"><span class="ic">🗓️</span>이번 주</button>
   <button class="tabbtn" data-tab="reflect"><span class="ic">📝</span>회고</button>
-  <button class="tabbtn" data-tab="coach"><span class="ic">💬</span>AI 코치</button>
+  <button class="tabbtn" data-tab="coach"><span class="ic">💬</span>코치</button>
 </div></div>
 
 <script>
 "use strict";
 /* ============================================================
-   ▼▼▼ CONFIG — 여기 세 줄만 본인 값으로 채우세요 ▼▼▼
+   ▼▼▼ CONFIG — 'SUPABASE_KEY'만 본인 Publishable 키로 채우세요 ▼▼▼
    ============================================================ */
 const CONFIG = {
   SUPABASE_URL : "https://dukfcfjlmhfkrihfitbi.supabase.co",
   SUPABASE_KEY : "sb_publishable_twHlTdXtEmF3HOwM0h8ydA_zrMcqDJu",
   FUNCTION_URL : "https://dukfcfjlmhfkrihfitbi.supabase.co/functions/v1/coach",
 };
-/* ============================================================
-   ▲▲▲ CONFIG 끝 ▲▲▲  (채우기 전엔 기기 저장만, 채우면 서버 동기화+코치 작동)
-   ============================================================ */
+/* ============================================================ */
 
 const WEEKDAYS=["일","월","화","수","목","금","토"];
-const PHASES={
-  read:{ko:"1회독",color:"var(--violet)",bg:"rgba(139,157,255,.14)"},
-  solve:{ko:"문제풀이",color:"var(--amber)",bg:"rgba(255,194,61,.14)"},
-  final:{ko:"마무리",color:"var(--coral)",bg:"rgba(255,107,107,.14)"},
-};
-const SCORE_LABELS=["","🥲 거의 없음","😟 약함","😐 보통","🙂 괜찮음","😎 자신 있음"];
-const KEY="attention-planner-v2";
-
-const cfgReady = CONFIG.SUPABASE_URL.indexOf("여기에")<0 && CONFIG.SUPABASE_KEY.indexOf("여기에")<0;
+const WLABEL={1:"적게",2:"보통",3:"많이"};
+const KEY="attention-planner-v4";
+const cfgReady = CONFIG.SUPABASE_KEY.indexOf("여기에")<0;
 let db=null;
 try{ if(cfgReady && window.supabase) db=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_KEY); }catch(e){}
 
-let S=load()||{
-  id:newId(), nickname:"",
-  examStart:"", weekdayHours:3, weekendHours:6,
-  subjects:["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""})),
-  done:{}, aiPlan:{}, reflections:[], generated:false, tab:"setup"
-};
-if(!S.id)S.id=newId();
-if(S.examStart===undefined)S.examStart="";
-if(!S.aiPlan)S.aiPlan={};
-if(!S.reflections)S.reflections=[];
-let weekOffset=0, aiBusy=false, reflectRating=3;
-
+/* ---------- utils ---------- */
 function newId(){try{return crypto.randomUUID();}catch(e){return "id-"+Date.now()+"-"+Math.random().toString(36).slice(2);}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 function load(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
-
-/* ---------- Supabase 동기화 ---------- */
-let syncTimer=null;
-function setSync(t){const el=document.getElementById("sync");if(el)el.textContent=t;}
-function buildSyncPayload(){
-  const p=buildPlan();
-  const total=p.days.reduce((a,d)=>a+d.tasks.length,0);
-  const done=p.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-  return {id:S.id,nickname:S.nickname||"이름없음",data:S,progress:done,total:total,updated_at:new Date().toISOString()};
-}
-function syncUp(){
-  save();
-  if(!db||!S.nickname)return;
-  clearTimeout(syncTimer);
-  syncTimer=setTimeout(async()=>{
-    try{ setSync("저장 중…"); await db.from("students").upsert(buildSyncPayload()); setSync("✓ 저장됨"); setTimeout(()=>setSync(""),1500); }
-    catch(e){ setSync("⚠ 저장 실패"); }
-  },800);
-}
-async function syncDown(){
-  if(!db||!S.id)return;
-  try{
-    const {data,error}=await db.from("students").select("data").eq("id",S.id).maybeSingle();
-    if(!error && data && data.data){
-      const srv=data.data;
-      S={...srv, id:S.id, nickname:srv.nickname||S.nickname};
-      save();
-    }
-  }catch(e){}
-}
-
 function todayMid(){const d=new Date();d.setHours(0,0,0,0);return d;}
 function parseDate(s){if(!s)return null;const d=new Date(s+"T00:00:00");return isNaN(d)?null:d;}
 function dayDiff(a,b){return Math.round((b-a)/86400000);}
 function fmtMD(d){return (d.getMonth()+1)+"."+d.getDate();}
 function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-
-function taskHint(subject,phase){
-  const eng=subject.indexOf("영어")>=0;
-  if(phase==="read")return eng?subject+" 본문·핵심표현 1회독 + 어휘 정리":subject+" 개념·교과서 1회독 + 핵심 정리";
-  if(phase==="solve")return eng?subject+" 기출/예상문제 + 본문 변형 대비":subject+" 기출·예상문제 풀이 + 오답 체크";
-  return eng?subject+" 오답 재점검 + 어휘·표현 암기 마무리":subject+" 오답 재점검 + 암기 마무리";
+/* ---------- 주(週) 헬퍼 (월~일) ---------- */
+function iso(d){return d.toISOString().slice(0,10);}
+function mondayOf(d){const x=new Date(d);x.setHours(0,0,0,0);const wd=x.getDay();x.setDate(x.getDate()+(wd===0?-6:1-wd));return x;}
+function curKey(){return iso(mondayOf(todayMid()));}
+function nextKey(){const m=mondayOf(todayMid());m.setDate(m.getDate()+7);return iso(m);}
+function weekDates(key){const m=new Date(key+"T00:00:00");const a=[];for(let i=0;i<7;i++){const d=new Date(m);d.setDate(m.getDate()+i);a.push({i,iso:iso(d),wd:d.getDay(),md:fmtMD(d)+"("+WEEKDAYS[d.getDay()]+")"});}return a;}
+function weekRange(key){const a=weekDates(key);return fmtMD(new Date(a[0].iso+"T00:00:00"))+" ~ "+fmtMD(new Date(a[6].iso+"T00:00:00"));}
+function weekHash(w){return JSON.stringify((w.subjects||[]).map(x=>({n:x.name,c:x.content,w:x.weight})));}
+function ensureWeek(key){
+  if(S.weeks[key])return S.weeks[key];
+  const prevKeys=Object.keys(S.weeks).filter(k=>k<key).sort();
+  const prev=prevKeys.length?S.weeks[prevKeys[prevKeys.length-1]]:null;
+  const subjects=(prev&&prev.subjects&&prev.subjects.length)
+    ? prev.subjects.map(s=>({name:s.name,content:s.content||"",weight:s.weight||2}))
+    : ["국어","영어","수학","과학","사회"].map(n=>({name:n,content:"",weight:2}));
+  S.weeks[key]={subjects,aiWeek:null,done:{},reflection:null};
+  return S.weeks[key];
 }
-function effDate(s){return parseDate(s.date)||parseDate(S.examStart);}
-function buildPlan(){
-  const today=todayMid();
-  const subs=S.subjects.map(s=>({name:s.name,score:s.score,scope:s.scope,d:effDate(s)}))
-    .filter(s=>s.name.trim()&&s.d&&dayDiff(today,s.d)>=0);
-  if(!subs.length)return{days:[],summary:[]};
-  const last=Math.max(...subs.map(s=>dayDiff(today,s.d)));
-  const summary=[...subs].sort((a,b)=>a.d-b.d).map(s=>({name:s.name,dday:dayDiff(today,s.d)}));
-  // '에이징 스케줄러': 우선순위가 높을수록 자주 나오되, 모든 과목이 며칠 안에 한 번씩은 돌아오도록 보장
-  const lastTouched={}; subs.forEach(s=>lastTouched[s.name]=-999);
-  const days=[];
-  for(let off=0;off<=last;off++){
-    const date=new Date(today);date.setDate(today.getDate()+off);
-    const wd=date.getDay(); const weekend=(wd===0||wd===6);
-    const dayMin=(weekend?S.weekendHours:S.weekdayHours)*60;
-    let cand=subs.map(s=>{
-      const remain=dayDiff(date,s.d); if(remain<0)return null;
-      const span=Math.max(1,dayDiff(today,s.d));
-      let phase; if(remain<=2)phase="final";
-      else if(remain<=Math.max(3,Math.round(span*0.45)))phase="solve"; else phase="read";
-      const weakness=6-(s.score||3); const urgency=1/Math.max(1,remain);
-      const prio=weakness*(1+2*urgency);
-      return {name:s.name,phase,prio,remain,due:(off-lastTouched[s.name])*prio};
-    }).filter(Boolean);
-    if(!cand.length||dayMin<=0){days.push({off,date,wd,tasks:[]});continue;}
-    cand.sort((a,b)=>b.due-a.due);
-    const top=cand.slice(0,3);
-    top.forEach(t=>lastTouched[t.name]=off);
-    const sumP=top.reduce((a,b)=>a+b.prio,0);
-    const tasks=top.map(t=>{
-      let m=Math.round((dayMin*(t.prio/sumP))/10)*10; m=Math.max(20,m);
-      return {id:off+"-"+t.name,subject:t.name,phase:t.phase,minutes:m,hint:taskHint(t.name,t.phase)};
-    });
-    days.push({off,date,wd,tasks});
+function editKey(){return settingsWeek==="next"?nextKey():curKey();}
+function editWeek(){return ensureWeek(editKey());}
+
+/* ---------- state ---------- */
+let S=load()||{ id:newId(), nickname:"", examDate:"", weeks:{}, generated:false, tab:"setup" };
+if(!S.id)S.id=newId();
+if(S.examDate===undefined)S.examDate="";
+if(!S.weeks){ // v3 이하 데이터 마이그레이션
+  S.weeks={};
+  if(Array.isArray(S.subjects)&&S.subjects.length){
+    S.weeks[curKey()]={subjects:S.subjects.map(s=>({name:s.name,content:s.content||"",weight:s.weight||2})),aiWeek:null,done:{},reflection:null};
   }
-  return{days,summary};
+  delete S.subjects; delete S.aiWeek; delete S.done; delete S.aiPlan; delete S.reflections;
+}
+let aiBusy=false, reflectRating=3, settingsWeek="cur";
+
+/* ---------- 동기화 ---------- */
+let syncTimer=null;
+function setSync(t){const el=document.getElementById("sync");if(el)el.textContent=t;}
+function curStats(){const w=S.weeks[curKey()];let total=0,done=0;
+  if(w&&w.aiWeek&&w.aiWeek.days)w.aiWeek.days.forEach(d=>d.tasks.forEach((t,i)=>{total++;if(w.done[d.date+"|"+t.subject+"|"+i])done++;}));
+  return {total,done};}
+function syncUp(){
+  save(); if(!db||!S.nickname)return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(async()=>{const st=curStats();
+    try{ setSync("저장 중…"); await db.from("students").upsert({id:S.id,nickname:S.nickname||"이름없음",data:S,progress:st.done,total:st.total,updated_at:new Date().toISOString()}); setSync("✓ 저장됨"); setTimeout(()=>setSync(""),1500);}catch(e){ setSync("⚠ 저장 실패"); }
+  },800);
+}
+async function syncDown(){
+  if(!db||!S.id)return;
+  try{const {data,error}=await db.from("students").select("data").eq("id",S.id).maybeSingle();
+    if(!error&&data&&data.data){const srv=data.data;S={...srv,id:S.id,nickname:srv.nickname||S.nickname};if(!S.weeks)S.weeks={};save();}}catch(e){}
+}
+
+/* ---------- AI 주간 분배 ---------- */
+function fallbackWeek(dates,subs){
+  const days=dates.map(dd=>({date:dd.iso,wd:dd.wd,md:dd.md,tasks:[]}));
+  subs.forEach((s,si)=>{const cnt=(s.weight||2)+2;for(let k=0;k<cnt;k++){const di=(si+k*2)%7;days[di].tasks.push({subject:s.name,task:(s.content||"").slice(0,24)||"이번 주 분량 학습"});}});
+  return days;
+}
+async function generateWeek(key){
+  if(aiBusy)return; aiBusy=true; const w=ensureWeek(key);
+  if(S.tab==="plan"&&key===curKey())render();
+  const dates=weekDates(key);
+  const subs=(w.subjects||[]).filter(s=>s.name.trim()&&s.content&&s.content.trim());
+  const hash=weekHash(w); let days=null;
+  if(cfgReady&&subs.length){
+    const sys=`너는 학습 분량 배분 도우미다. 학생이 과목별로 '이번 주에 공부할 분량'과 '비중'을 적었다. 이걸 주어진 7일에 나눠 일주일 안에 다 끝내도록 배치한다.
+규칙: 비중이 높은 과목일수록 더 많은 날에 배치. 하루에 보통 2~3과목, 너무 몰아넣지 말 것. 분량을 쪼개 날짜별로 진도가 나가게. 각 task는 구체적이고 짧게(20자 이내).
+반드시 JSON만 출력: {"0":[{"subject":"수학","task":"..."}],"1":[...],...,"6":[...]}. 키는 0~6. 코드블록·설명 금지.`;
+    const user=`이번 주 7일: ${JSON.stringify(dates.map(d=>({i:d.i,날짜:d.md})))}
+과목별 이번 주 분량:
+${subs.map(s=>`- ${s.name} (비중:${WLABEL[s.weight||2]}): ${s.content}`).join("\n")}
+각 과목 분량을 위 7일에 나눠 배치해 JSON으로만 답해줘.`;
+    try{
+      const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},body:JSON.stringify({system:sys,messages:[{role:"user",content:user}]})});
+      const d=await res.json();
+      let txt=(d.text||"").trim();const a=txt.indexOf("{"),b=txt.lastIndexOf("}");if(a>=0&&b>a)txt=txt.slice(a,b+1);
+      const obj=JSON.parse(txt);
+      days=dates.map(dd=>{const arr=obj[dd.i]||obj[String(dd.i)]||[];return {date:dd.iso,wd:dd.wd,md:dd.md,tasks:(Array.isArray(arr)?arr:[]).filter(x=>x&&x.subject).map(x=>({subject:String(x.subject),task:String(x.task||"")}))};});
+    }catch(e){ days=null; }
+  }
+  if(!days)days=fallbackWeek(dates,subs);
+  w.aiWeek={hash,days}; aiBusy=false; syncUp();
+  if(S.tab==="plan"||S.tab==="setup")render();
 }
 
 /* ---------- render ---------- */
 function renderHeader(){
-  const t=todayMid();
+  const t=todayMid();const ed=parseDate(S.examDate);const dd=ed?dayDiff(t,ed):null;
   document.getElementById("header").innerHTML=`
    <div class="fade" style="padding:26px 20px 14px">
     <div class="mono" style="color:var(--amber);font-size:12px;letter-spacing:2px;margin-bottom:8px">ATTENTION · D-DAY PLANNER</div>
-    <h1 class="disp" style="font-size:30px">${S.nickname?esc(S.nickname)+"의 ":""}<span class="hl">시험 작전</span> 짜기</h1>
-    <div style="color:var(--sub);font-size:13px;margin-top:8px">오늘 ${t.getMonth()+1}월 ${t.getDate()}일 (${WEEKDAYS[t.getDay()]}) · 시험일에서 거꾸로 설계합니다</div>
+    <h1 class="disp" style="font-size:30px">${S.nickname?esc(S.nickname)+"의 ":""}<span class="hl">시험 작전</span></h1>
+    <div style="color:var(--sub);font-size:13px;margin-top:8px">${dd!==null&&dd>=0?`시험까지 <span class="chip" style="color:${dd<=3?'var(--coral)':'var(--amber)'}">D-${dd===0?"DAY":dd}</span> · `:""}이번 주 ${weekRange(curKey())}</div>
    </div>`;
 }
 function renderNav(){document.querySelectorAll(".tabbtn").forEach(b=>b.classList.toggle("on",b.dataset.tab===S.tab));}
-
 function render(){
   if(!S.nickname){document.getElementById("nav").style.display="none";renderOnboard();return;}
   document.getElementById("nav").style.display="block";
@@ -226,6 +213,24 @@ function render(){
   else if(S.tab==="plan")renderPlan();
   else if(S.tab==="reflect")renderReflect();
   else renderCoach();
+}
+
+/* ----- 주말 정리 배너 ----- */
+function weekendBanner(){
+  const wd=todayMid().getDay(); if(wd!==0&&wd!==6)return "";
+  return `<div style="background:linear-gradient(90deg,rgba(255,194,61,.14),rgba(62,224,163,.10));border:1px solid var(--amber);border-radius:14px;padding:13px 15px;margin-bottom:16px">
+    <div style="font-weight:800;font-size:14px;margin-bottom:3px">🗓️ 주말 — 한 주 정리할 시간!</div>
+    <div style="color:var(--sub);font-size:12.5px;line-height:1.5">이번 주를 돌아보고, 설정에서 <b style="color:var(--txt)">'다음 주'</b> 분량을 정해보자.</div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="bn-ref" style="flex:1;background:var(--amber);color:#1a1206;border-radius:10px;padding:9px;font-size:13px">📝 회고 쓰기</button>
+      <button id="bn-next" style="flex:1;background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px;font-size:13px">⚙️ 다음 주 분량</button>
+    </div>
+  </div>`;
+}
+function bindBanner(){
+  const a=document.getElementById("bn-ref"),b=document.getElementById("bn-next");
+  if(a)a.addEventListener("click",()=>{S.tab="reflect";render();});
+  if(b)b.addEventListener("click",()=>{settingsWeek="next";S.tab="setup";render();});
 }
 
 /* ----- Onboarding ----- */
@@ -248,264 +253,157 @@ function renderOnboard(){
 
 /* ----- Setup ----- */
 function renderSetup(){
-  const v=document.getElementById("view");
+  const v=document.getElementById("view"); const key=editKey();
   v.innerHTML=`
   <div style="padding:4px 16px 8px">
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="seg sw ${settingsWeek==='cur'?'on':''}" data-w="cur">이번 주</button>
+      <button class="seg sw ${settingsWeek==='next'?'on':''}" data-w="next">다음 주</button>
+    </div>
+    <div style="color:var(--muted);font-size:12px;text-align:center;margin-bottom:18px">${settingsWeek==='next'?'다음 주':'이번 주'} (${weekRange(key)}) 분량을 정해요</div>
     <div style="margin-bottom:22px">
-      ${secHead("📌","시험 시작(예상) 날짜")}
-      <input id="exam-start" class="inp" type="date" value="${esc(S.examStart||"")}" style="color-scheme:dark">
-      <div style="color:var(--muted);font-size:12px;margin-top:6px;line-height:1.55">아직 시간표가 안 나왔으면 대략의 시작일만 넣어도 돼요. 과목 날짜를 비워두면 이 날짜를 기준으로 잡고, 나중에 과목별로 정확히 바꿀 수 있어요.</div>
+      ${secHead("📌","시험일")}
+      <input id="exam-date" class="inp" type="date" value="${esc(S.examDate||"")}" style="color-scheme:dark">
+      <div style="color:var(--muted);font-size:12px;margin-top:6px">시험까지 며칠 남았는지 카운트다운으로 보여줘요. (한 번만 설정)</div>
     </div>
     <div style="margin-bottom:22px">
-      ${secHead("📅","과목 · 시험일 · 자신감")}
+      ${secHead("📚","과목별 학습 분량")}
+      <div style="color:var(--muted);font-size:12px;margin:-6px 0 12px;line-height:1.55">공부할 분량을 적고 비중만 정하면, AI가 일주일에 맞게 자동으로 나눠줘요.</div>
       <div id="subs"></div>
       <button id="addsub" style="width:100%;background:var(--card2);color:var(--txt);border-radius:14px;padding:12px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--line)">＋ 과목 추가</button>
     </div>
-    <div style="margin-bottom:22px">
-      ${secHead("🔥","하루 공부 가능 시간")}
-      ${hourRow("평일","wd",S.weekdayHours)}
-      ${hourRow("주말","we",S.weekendHours)}
-    </div>
-    <button id="gen" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--amber-d));color:#1a1206;border-radius:16px;padding:16px;font-size:16px;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 10px 30px -10px rgba(255,194,61,.5)">✨ 역산 계획 만들기</button>
+    <button id="gen" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--amber-d));color:#1a1206;border-radius:16px;padding:16px;font-size:16px;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 10px 30px -10px rgba(255,194,61,.5)">✨ ${settingsWeek==='next'?'다음 주 계획 만들기':'이번 주 계획 짜기'}</button>
     <button id="reset" style="width:100%;background:transparent;color:var(--muted);padding:14px;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px">↻ 전체 초기화</button>
   </div>`;
   renderSubs();
-  document.getElementById("exam-start").addEventListener("change",e=>{S.examStart=e.target.value;syncUp();renderSubs();});
-  document.getElementById("addsub").addEventListener("click",()=>{S.subjects.push({name:"",date:"",score:3,scope:""});renderSubs();syncUp();});
-  document.getElementById("gen").addEventListener("click",generate);
+  v.querySelectorAll(".sw").forEach(b=>b.addEventListener("click",()=>{settingsWeek=b.dataset.w;renderSetup();}));
+  document.getElementById("exam-date").addEventListener("change",e=>{S.examDate=e.target.value;syncUp();renderHeader();});
+  document.getElementById("addsub").addEventListener("click",()=>{editWeek().subjects.push({name:"",content:"",weight:2});renderSubs();syncUp();});
+  document.getElementById("gen").addEventListener("click",()=>{
+    const w=editWeek(); const ok=(w.subjects||[]).some(s=>s.name.trim()&&s.content&&s.content.trim());
+    if(!ok){alert("과목명과 학습 분량을 하나 이상 적어주세요.");return;}
+    if(settingsWeek==="next"){ generateWeek(nextKey()); alert("다음 주 계획을 만들었어요! 월요일부터 '이번 주' 탭에 보여줄게요 😊"); }
+    else { S.generated=true; S.tab="plan"; syncUp(); render(); }
+  });
   document.getElementById("reset").addEventListener("click",reset);
-  bindHour("wd"); bindHour("we");
 }
 function secHead(ic,t){return `<div style="display:flex;align-items:center;gap:7px;margin-bottom:12px"><span>${ic}</span><span style="font-weight:800;font-size:14px">${t}</span></div>`;}
-function hourRow(label,id,val){
-  return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-    <span style="width:40px;color:var(--sub);font-weight:700;font-size:14px">${label}</span>
-    <input id="h-${id}" class="range" type="range" min="0" max="12" step="0.5" value="${val}" style="flex:1">
-    <span id="hl-${id}" class="mono" style="width:56px;text-align:right;color:var(--amber);font-weight:700">${val}h</span></div>`;
-}
-function bindHour(id){
-  const el=document.getElementById("h-"+id), lab=document.getElementById("hl-"+id);
-  el.addEventListener("input",e=>{const v=+e.target.value;lab.textContent=v+"h";if(id==="wd")S.weekdayHours=v;else S.weekendHours=v;syncUp();});
-}
 function renderSubs(){
-  const today=todayMid();
-  const c=document.getElementById("subs"); c.innerHTML="";
-  S.subjects.forEach((s,i)=>{
-    const own=parseDate(s.date); const ed=own||parseDate(S.examStart);
-    const dd=ed?dayDiff(today,ed):null; const fb=!own&&!!parseDate(S.examStart);
+  const w=editWeek(); const c=document.getElementById("subs"); c.innerHTML="";
+  w.subjects.forEach((s,i)=>{
     const el=document.createElement("div"); el.className="subcard";
     el.innerHTML=`
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
         <input class="inp s-name" data-i="${i}" placeholder="과목명" value="${esc(s.name)}" style="flex:1">
-        <input class="inp s-date" data-i="${i}" type="date" value="${esc(s.date)}" style="flex:1;color-scheme:dark">
         <button class="s-del" data-i="${i}" style="background:transparent;color:var(--muted);padding:6px;font-size:18px">✕</button>
       </div>
-      <div class="s-dd" style="margin-top:8px;font-size:12px">${dd!==null&&dd>=0?`<span class="chip" style="color:${dd<=3?'var(--coral)':'var(--amber)'}">D-${dd===0?"DAY":dd}${fb?" (예상)":""}</span>`:""}</div>
-      <div style="margin-top:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px">
-          <span>이 과목 자신감</span><span class="s-slab" style="color:var(--txt);font-weight:800">${SCORE_LABELS[s.score]}</span>
+      <textarea class="inp s-content" data-i="${i}" rows="2" placeholder="학습 분량 (예: 교재 3단원, 문제집 p.30~60, 단어 5강)" style="resize:none;font-size:14px;margin-bottom:10px">${esc(s.content||"")}</textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="color:var(--sub);font-size:12px;font-weight:700;flex:0 0 auto">비중</span>
+        <div style="display:flex;gap:6px;flex:1">
+          ${[1,2,3].map(wt=>`<button class="seg s-w ${(s.weight||2)===wt?'on':''}" data-i="${i}" data-w="${wt}">${WLABEL[wt]}</button>`).join("")}
         </div>
-        <input class="range s-score" data-i="${i}" type="range" min="1" max="5" value="${s.score}">
-      </div>
-      <input class="inp s-scope" data-i="${i}" placeholder="시험 범위 (적으면 AI가 날짜별로 분배해줘요)" value="${esc(s.scope)}" style="margin-top:10px;font-size:13px">`;
+      </div>`;
     c.appendChild(el);
   });
-  c.querySelectorAll(".s-name").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].name=e.target.value;syncUp();}));
-  c.querySelectorAll(".s-scope").forEach(el=>el.addEventListener("input",e=>{S.subjects[+e.target.dataset.i].scope=e.target.value;syncUp();}));
-  c.querySelectorAll(".s-date").forEach(el=>el.addEventListener("change",e=>{S.subjects[+e.target.dataset.i].date=e.target.value;syncUp();renderSubs();}));
-  c.querySelectorAll(".s-score").forEach(el=>el.addEventListener("input",e=>{
-    const i=+e.target.dataset.i,v=+e.target.value; S.subjects[i].score=v; syncUp();
-    e.target.closest(".subcard").querySelector(".s-slab").textContent=SCORE_LABELS[v];
-  }));
-  c.querySelectorAll(".s-del").forEach(el=>el.addEventListener("click",e=>{S.subjects.splice(+e.target.dataset.i,1);renderSubs();syncUp();}));
-}
-function generate(){
-  const today=todayMid();
-  const ok=S.subjects.some(s=>{const d=parseDate(s.date)||parseDate(S.examStart);return s.name.trim()&&d&&dayDiff(today,d)>=0;});
-  if(!ok){alert("과목명과, '시험 시작(예상) 날짜' 또는 과목별 시험일을 하나 이상 입력해 주세요.");return;}
-  S.generated=true; S.tab="plan"; weekOffset=0; syncUp(); render();
+  c.querySelectorAll(".s-name").forEach(el=>el.addEventListener("input",e=>{editWeek().subjects[+e.target.dataset.i].name=e.target.value;syncUp();}));
+  c.querySelectorAll(".s-content").forEach(el=>el.addEventListener("input",e=>{editWeek().subjects[+e.target.dataset.i].content=e.target.value;syncUp();}));
+  c.querySelectorAll(".s-w").forEach(el=>el.addEventListener("click",e=>{const b=e.currentTarget;editWeek().subjects[+b.dataset.i].weight=+b.dataset.w;syncUp();renderSubs();}));
+  c.querySelectorAll(".s-del").forEach(el=>el.addEventListener("click",e=>{editWeek().subjects.splice(+e.currentTarget.dataset.i,1);renderSubs();syncUp();}));
 }
 function reset(){
-  if(!confirm("계획·진행 상황을 초기화할까요? (닉네임은 유지됩니다)"))return;
-  S.examStart="";S.weekdayHours=3;S.weekendHours=6;
-  S.subjects=["국어","영어","수학","과학","사회"].map(n=>({name:n,date:"",score:3,scope:""}));
-  S.done={};S.aiPlan={};S.reflections=[];S.generated=false;S.tab="setup";weekOffset=0;
+  if(!confirm("모든 주차의 계획·회고를 초기화할까요? (닉네임은 유지됩니다)"))return;
+  S.examDate=""; S.weeks={}; S.generated=false; S.tab="setup"; settingsWeek="cur";
   syncUp(); render();
 }
 
-/* ----- Plan ----- */
+/* ----- Plan (이번 주) ----- */
 function renderPlan(){
-  const plan=buildPlan(); const v=document.getElementById("view");
-  if(!plan.days.length){
-    v.innerHTML=`<div class="fade" style="text-align:center;padding:60px 30px">
-      <div style="font-size:40px;margin-bottom:12px">🗓️</div>
-      <div style="font-weight:800;font-size:16px">아직 만들어진 계획이 없어요.</div>
-      <div style="color:var(--sub);font-size:13px;margin-top:6px">설정에서 과목과 '시험 시작(예상) 날짜'를 넣고 계획을 만들어 주세요.</div>
+  const v=document.getElementById("view"); const key=curKey(); const w=ensureWeek(key);
+  const hasContent=(w.subjects||[]).some(s=>s.name.trim()&&s.content&&s.content.trim());
+  if(!hasContent){
+    v.innerHTML=`<div style="padding:4px 16px">${weekendBanner()}</div><div class="fade" style="text-align:center;padding:40px 30px">
+      <div style="font-size:40px;margin-bottom:12px">📚</div>
+      <div style="font-weight:800;font-size:16px">아직 이번 주 분량이 없어요.</div>
+      <div style="color:var(--sub);font-size:13px;margin-top:6px">설정에서 과목별 학습 분량을 적으면<br>AI가 일주일에 맞게 자동으로 나눠줍니다.</div>
       <button id="goset" style="margin-top:18px;background:var(--amber);color:#1a1206;border-radius:12px;padding:10px 20px">설정으로 가기 ›</button></div>`;
-    document.getElementById("goset").addEventListener("click",()=>{S.tab="setup";render();});
+    bindBanner(); document.getElementById("goset").addEventListener("click",()=>{S.tab="setup";render();});
     return;
   }
-  const lastOff=plan.days[plan.days.length-1].off;
-  const maxWeek=Math.floor(lastOff/7);
-  if(weekOffset>maxWeek)weekOffset=maxWeek; if(weekOffset<0)weekOffset=0;
-  const start=weekOffset*7, end=start+6;
-  const weekDays=plan.days.filter(d=>d.off>=start&&d.off<=end);
-  const oTotal=plan.days.reduce((a,d)=>a+d.tasks.length,0);
-  const oDone=plan.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-  const oPct=oTotal?Math.round(oDone/oTotal*100):0;
-  const wTotal=weekDays.reduce((a,d)=>a+d.tasks.length,0);
-  const wDone=weekDays.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-  const wPct=wTotal?Math.round(wDone/wTotal*100):0;
-  const sD=new Date(todayMid());sD.setDate(sD.getDate()+start);
-  const eD=new Date(todayMid());eD.setDate(eD.getDate()+end);
-  const weekLabel=weekOffset===0?"이번 주":(weekOffset+"주 후");
-
-  let chips=plan.summary.map(s=>`<div style="flex:0 0 auto;background:var(--card2);border:1px solid ${s.dday<=3?'var(--coral)':'var(--line)'};border-radius:12px;padding:8px 12px">
-      <div style="font-size:12px;color:var(--sub);font-weight:700">${esc(s.name)}</div>
-      <div class="chip" style="font-size:14px;color:${s.dday<=3?'var(--coral)':'var(--amber)'}">D-${s.dday===0?"DAY":s.dday}</div></div>`).join("");
-  let cards=weekDays.filter(d=>d.tasks.length).map(d=>{
-    const mins=d.tasks.reduce((a,t)=>a+t.minutes,0);
-    const rows=d.tasks.map(t=>{
-      const ph=PHASES[t.phase]; const done=!!S.done[t.id];
-      return `<div class="taskrow ${done?'done':''}" data-id="${t.id}">
+  if((!w.aiWeek||w.aiWeek.hash!==weekHash(w))&&!aiBusy){ generateWeek(key); }
+  if(aiBusy&&!w.aiWeek){
+    v.innerHTML=`<div class="fade" style="text-align:center;padding:70px 30px"><div style="font-size:34px;margin-bottom:14px">✨</div><div style="font-weight:800">AI가 이번 주 분량을 나누는 중…</div><div style="color:var(--sub);font-size:13px;margin-top:6px">잠깐만 기다려줘</div></div>`;
+    return;
+  }
+  const st=curStats(); const pct=st.total?Math.round(st.done/st.total*100):0;
+  const todayIso=iso(todayMid());
+  let cards=((w.aiWeek&&w.aiWeek.days)||[]).filter(d=>d.tasks&&d.tasks.length).map(d=>{
+    const rows=d.tasks.map((t,i)=>{const id=d.date+"|"+t.subject+"|"+i;const done=!!w.done[id];
+      return `<div class="taskrow ${done?'done':''}" data-id="${id}">
         <div class="cbox">${done?'✓':''}</div>
         <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:7px">
-            <span class="sname" style="font-weight:800;font-size:15px">${esc(t.subject)}</span>
-            <span class="chip" style="font-size:11px;color:${ph.color};background:${ph.bg};padding:2px 7px;border-radius:6px">${ph.ko}</span>
-            <span class="mono" style="margin-left:auto;font-size:12px;color:var(--muted)">${t.minutes}분</span>
-          </div>
-          <div style="font-size:12.5px;color:${(S.aiPlan&&S.aiPlan[t.id])?'var(--mint)':'var(--sub)'};margin-top:3px">${esc((S.aiPlan&&S.aiPlan[t.id])?("✨ "+S.aiPlan[t.id]):t.hint)}</div>
-        </div></div>`;
-    }).join("");
-    return `<div class="daycard" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:7px"><span class="sname" style="font-weight:800;font-size:15px">${esc(t.subject)}</span></div>
+          <div style="font-size:13px;color:var(--sub);margin-top:3px">${esc(t.task||"")}</div>
+        </div></div>`;}).join("");
+    return `<div style="margin-bottom:16px">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
-        <span class="disp" style="font-size:18px">${fmtMD(d.date)}</span>
-        <span style="color:${(d.wd===0||d.wd===6)?'var(--coral)':'var(--sub)'};font-size:13px;font-weight:700">${WEEKDAYS[d.wd]}요일</span>
-        ${d.off===0?`<span class="chip" style="font-size:11px;color:#1a1206;background:var(--amber);padding:2px 7px;border-radius:6px">TODAY</span>`:""}
-        <span style="margin-left:auto;color:var(--muted);font-size:12px">${mins}분</span>
+        <span class="disp" style="font-size:18px">${esc(d.md)}</span>
+        ${d.date===todayIso?`<span class="chip" style="font-size:11px;color:#1a1206;background:var(--amber);padding:2px 7px;border-radius:6px">TODAY</span>`:""}
       </div>${rows}</div>`;
   }).join("");
-  const noWeek=`<div style="text-align:center;color:var(--sub);padding:40px 20px">이 주(週)엔 예정된 학습이 없어요.<br><span style="font-size:13px">다른 주를 확인하거나, 설정에서 날짜를 조정해 보세요.</span></div>`;
-
   v.innerHTML=`
   <div style="padding:4px 16px 8px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-      <button id="wprev" style="background:var(--card2);border:1px solid var(--line);color:${weekOffset>0?'var(--txt)':'var(--muted)'};border-radius:10px;width:42px;height:42px;font-size:15px">◀</button>
-      <div style="flex:1;text-align:center">
-        <div class="disp" style="font-size:17px">${fmtMD(sD)} ~ ${fmtMD(eD)}</div>
-        <div style="color:var(--amber);font-size:12px;font-weight:700">${weekLabel}</div>
-      </div>
-      <button id="wnext" style="background:var(--card2);border:1px solid var(--line);color:${weekOffset<maxWeek?'var(--txt)':'var(--muted)'};border-radius:10px;width:42px;height:42px;font-size:15px">▶</button>
-    </div>
+    ${weekendBanner()}
     <div class="fade" style="background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <span style="color:var(--sub);font-size:13px;font-weight:700">이번 주 진행률</span>
-        <span id="pct" class="disp" style="font-size:26px;color:var(--mint)">${wPct}%</span></div>
+        <span id="pct" class="disp" style="font-size:26px;color:var(--mint)">${pct}%</span></div>
       <div style="height:9px;background:var(--ink2);border-radius:99px;overflow:hidden;margin-top:8px">
-        <div id="bar" style="width:${wPct}%;height:100%;background:linear-gradient(90deg,var(--mint),#2bc88c);border-radius:99px;transition:width .4s"></div></div>
-      <div id="cnt" style="color:var(--muted);font-size:12px;margin-top:6px">${wDone} / ${wTotal} 항목 · 전체 ${oPct}%</div>
+        <div id="bar" style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--mint),#2bc88c);border-radius:99px;transition:width .4s"></div></div>
+      <div id="cnt" style="color:var(--muted);font-size:12px;margin-top:6px">${st.done} / ${st.total} 항목 완료</div>
     </div>
-    <div class="scroll" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px">${chips}</div>
-    <button id="aifill" style="width:100%;background:var(--card2);color:var(--txt);border:1px solid var(--violet);border-radius:12px;padding:11px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px">✨ AI로 학습 분량 채우기</button>
-    <div style="color:var(--muted);font-size:11px;text-align:center;margin-bottom:14px;line-height:1.5">설정에서 과목별 '시험 범위'를 적으면, 그 범위를 날짜에 맞춰 구체적으로 나눠줍니다.</div>
-    <div>${cards||noWeek}</div>
+    <button id="regen" style="width:100%;background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:16px;font-size:13px">↻ 이번 주 다시 짜기</button>
+    <div>${cards||'<div style="text-align:center;color:var(--sub);padding:30px">분배 결과가 비어 있어요. 다시 짜기를 눌러보세요.</div>'}</div>
     <div style="text-align:center;color:var(--muted);font-size:12px;padding:10px 0 4px">이번 주만 끝내도 충분해 — <span style="color:var(--amber)">한 주씩 쌓는 거야 🔥</span></div>
   </div>`;
-
-  const wp=document.getElementById("wprev"), wn=document.getElementById("wnext");
-  wp.addEventListener("click",()=>{if(weekOffset>0){weekOffset--;renderPlan();}});
-  wn.addEventListener("click",()=>{if(weekOffset<maxWeek){weekOffset++;renderPlan();}});
-  const af=document.getElementById("aifill");
-  if(af){ if(aiBusy)af.textContent="✨ 분배 중…"; af.addEventListener("click",aiFillScope); }
+  bindBanner();
+  document.getElementById("regen").addEventListener("click",()=>{w.aiWeek=null;generateWeek(key);});
   v.querySelectorAll(".taskrow").forEach(row=>row.addEventListener("click",()=>{
-    const id=row.dataset.id; S.done[id]=!S.done[id]; syncUp();
-    row.classList.toggle("done",!!S.done[id]);
-    row.querySelector(".cbox").textContent=S.done[id]?"✓":"";
-    const p2=buildPlan();
-    const wd2=p2.days.filter(d=>d.off>=start&&d.off<=end);
-    const wt=wd2.reduce((a,d)=>a+d.tasks.length,0);
-    const wdn=wd2.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-    const wpc=wt?Math.round(wdn/wt*100):0;
-    const ot=p2.days.reduce((a,d)=>a+d.tasks.length,0);
-    const odn=p2.days.reduce((a,d)=>a+d.tasks.filter(t=>S.done[t.id]).length,0);
-    const opc=ot?Math.round(odn/ot*100):0;
-    document.getElementById("pct").textContent=wpc+"%";
-    document.getElementById("bar").style.width=wpc+"%";
-    document.getElementById("cnt").textContent=wdn+" / "+wt+" 항목 · 전체 "+opc+"%";
+    const id=row.dataset.id; w.done[id]=!w.done[id]; syncUp();
+    row.classList.toggle("done",!!w.done[id]); row.querySelector(".cbox").textContent=w.done[id]?"✓":"";
+    const s2=curStats(); const pc=s2.total?Math.round(s2.done/s2.total*100):0;
+    document.getElementById("pct").textContent=pc+"%"; document.getElementById("bar").style.width=pc+"%";
+    document.getElementById("cnt").textContent=s2.done+" / "+s2.total+" 항목 완료";
   }));
-}
-
-/* ----- AI 범위 분배 ----- */
-async function aiFillScope(){
-  if(aiBusy)return;
-  if(!cfgReady){alert("코치 서버 연결이 필요해요. (설정의 SUPABASE 키/주소 확인)");return;}
-  const plan=buildPlan();
-  const bySubject={};
-  plan.days.forEach(d=>d.tasks.forEach(t=>{
-    const subj=S.subjects.find(s=>s.name===t.subject);
-    if(subj && subj.scope && subj.scope.trim()){
-      (bySubject[t.subject]=bySubject[t.subject]||[]).push({id:t.id,date:fmtMD(d.date)+"("+WEEKDAYS[d.wd]+")",단계:PHASES[t.phase].ko});
-    }
-  }));
-  const names=Object.keys(bySubject);
-  if(!names.length){alert("먼저 '설정'에서 과목별 '시험 범위'를 입력한 뒤 계획을 만들어 주세요.");return;}
-
-  aiBusy=true;
-  const btn=document.getElementById("aifill"); if(btn)btn.disabled=true;
-  const result={...(S.aiPlan||{})};
-  let failed=0;
-  for(let i=0;i<names.length;i++){
-    const name=names[i], days=bySubject[name];
-    const subj=S.subjects.find(s=>s.name===name);
-    if(btn)btn.textContent="✨ 분배 중… "+(i+1)+"/"+names.length+" ("+name+")";
-    const sys=`너는 학습 분량 배분 도우미다. 학생의 '시험 범위'를 주어진 학습일들에 빠짐없이 고르게 나눠 배정한다.
-각 날의 '단계'에 맞춰 구체적이고 짧은 할 일 한 줄(25자 이내)을 만든다 — 1회독: 진도/내용 정리, 문제풀이: 그 범위의 문제 풀이, 마무리: 복습·오답.
-반드시 JSON 객체만 출력한다. 형식 {"학습일ID":"할 일", ...}. 코드블록·설명 금지.`;
-    const user=`과목: ${name}\n시험 범위: ${subj.scope}\n학습일 목록(JSON): ${JSON.stringify(days)}\n각 학습일 ID마다 할 일을 배정해 JSON으로만 답해줘.`;
-    try{
-      const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",
-        headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},
-        body:JSON.stringify({system:sys,messages:[{role:"user",content:user}]})});
-      const d=await res.json();
-      let txt=(d.text||"").trim();
-      const a=txt.indexOf("{"), b=txt.lastIndexOf("}");
-      if(a>=0&&b>a)txt=txt.slice(a,b+1);
-      const obj=JSON.parse(txt);
-      Object.keys(obj).forEach(k=>{ if(typeof obj[k]==="string")result[k]=obj[k]; });
-    }catch(e){ failed++; }
-  }
-  S.aiPlan=result; aiBusy=false; syncUp();
-  if(failed)setTimeout(()=>alert(failed+"개 과목은 분배에 실패했어요. 잠시 후 버튼을 다시 눌러보세요."),100);
-  render();
 }
 
 /* ----- 주간 회고 ----- */
 const REF_EMO=["","😣","😕","😐","🙂","😄"];
 function renderReflect(){
-  const v=document.getElementById("view");
-  const list=(S.reflections||[]).slice().reverse();
-  const hist=list.map(r=>{
-    const d=new Date(r.t);
+  const v=document.getElementById("view"); const key=curKey(); const w=ensureWeek(key);
+  const already=!!w.reflection;
+  const histKeys=Object.keys(S.weeks).filter(k=>S.weeks[k].reflection).sort().reverse();
+  const hist=histKeys.map(k=>{const r=S.weeks[k].reflection;
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <span style="font-size:18px">${REF_EMO[r.rating]||"🙂"}</span>
-        <span style="font-weight:800;font-size:13px">${(d.getMonth()+1)+"/"+d.getDate()} 회고</span>
-        <span style="margin-left:auto;color:var(--muted);font-size:11px">${WEEKDAYS[d.getDay()]}요일</span>
+        <span style="font-weight:800;font-size:13px">${weekRange(k)}</span>
+        ${k===key?`<span class="chip" style="font-size:10px;color:#1a1206;background:var(--amber);padding:1px 6px;border-radius:5px">이번 주</span>`:""}
       </div>
       ${r.good?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--mint)">잘된 점</span> · ${esc(r.good)}</div>`:""}
       ${r.hard?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--coral)">아쉬운 점</span> · ${esc(r.hard)}</div>`:""}
       ${r.change?`<div style="font-size:13px;margin-bottom:5px"><span style="color:var(--amber)">다음 주 변화</span> · ${esc(r.change)}</div>`:""}
       ${r.coach==="__pending__"?`<div style="font-size:12.5px;color:var(--violet);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">💬 코치가 읽는 중…</div>`:(r.coach?`<div style="font-size:12.5px;color:var(--violet);margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">💬 코치 · ${esc(r.coach)}</div>`:"")}
-    </div>`;
-  }).join("");
+    </div>`;}).join("");
   const emo=[1,2,3,4,5].map(n=>`<button class="ref-emo" data-n="${n}" style="flex:1;background:${reflectRating===n?'var(--card2)':'transparent'};border:1px solid ${reflectRating===n?'var(--amber)':'var(--line)'};border-radius:12px;padding:10px 0;font-size:22px">${REF_EMO[n]}</button>`).join("");
   v.innerHTML=`
   <div style="padding:4px 16px 8px">
-    <div style="margin:6px 0 18px">
+    ${weekendBanner()}
+    <div style="margin:2px 0 18px">
       <h2 class="disp" style="font-size:23px;margin-bottom:4px">이번 주 <span class="hl">회고</span></h2>
-      <div style="color:var(--sub);font-size:13px">한 주를 돌아보고, 다음 주를 스스로 조정해 보자.</div>
+      <div style="color:var(--sub);font-size:13px">${weekRange(key)} · 한 주를 돌아보고 다음 주를 조정해 보자.</div>
     </div>
+    ${already?`<div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:16px;color:var(--sub);font-size:12.5px">이번 주 회고는 이미 작성했어. 다시 쓰면 덮어써져.</div>`:""}
     <div style="color:var(--sub);font-size:13px;font-weight:700;margin-bottom:8px">이번 주 어땠어?</div>
     <div style="display:flex;gap:6px;margin-bottom:18px">${emo}</div>
     <div style="color:var(--mint);font-size:13px;font-weight:700;margin-bottom:6px">✅ 이번 주 잘된 점</div>
@@ -515,8 +413,9 @@ function renderReflect(){
     <div style="color:var(--amber);font-size:13px;font-weight:700;margin-bottom:6px">🎯 다음 주에 바꿀 한 가지</div>
     <textarea id="r-change" class="inp" rows="2" placeholder="딱 하나만 정하자" style="resize:none;margin-bottom:18px"></textarea>
     <button id="r-save" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--amber-d));color:#1a1206;border-radius:16px;padding:15px;font-size:15px">회고 저장하기</button>
-    ${list.length?`<div style="margin-top:28px;color:var(--sub);font-size:13px;font-weight:700;margin-bottom:10px">지난 회고</div>${hist}`:""}
+    ${histKeys.length?`<div style="margin-top:28px;color:var(--sub);font-size:13px;font-weight:700;margin-bottom:10px">지난 회고</div>${hist}`:""}
   </div>`;
+  bindBanner();
   v.querySelectorAll(".ref-emo").forEach(b=>b.addEventListener("click",()=>{reflectRating=+b.dataset.n;renderReflect();}));
   document.getElementById("r-save").addEventListener("click",saveReflection);
 }
@@ -525,29 +424,31 @@ async function saveReflection(){
   const hard=(document.getElementById("r-hard").value||"").trim();
   const change=(document.getElementById("r-change").value||"").trim();
   if(!good&&!hard&&!change){alert("한 줄이라도 적어보자 — 돌아보는 게 핵심이야!");return;}
+  const w=ensureWeek(curKey());
   const entry={t:new Date().toISOString(),rating:reflectRating,good,hard,change,coach:cfgReady?"__pending__":""};
-  S.reflections=S.reflections||[]; S.reflections.push(entry);
-  reflectRating=3; syncUp(); render();
+  w.reflection=entry; reflectRating=3; syncUp(); render();
   if(cfgReady){
     try{
       const sys=`너는 어텐션 학원의 따뜻한 학습 코치다. 학생이 방금 주간 회고를 적었다. 자책하지 않게 받아주고, 노력을 인정하고, 다음 주 다짐을 응원하며, 아주 작은 행동 제안 하나로 마무리한다. 반말로 2~3문장, 짧고 따뜻하게.`;
       const user=`주간 회고\n잘된 점: ${good||"(없음)"}\n아쉬운 점/이유: ${hard||"(없음)"}\n다음 주 변화: ${change||"(없음)"}`;
       const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},body:JSON.stringify({system:sys,messages:[{role:"user",content:user}]})});
-      const d=await res.json();
-      entry.coach=(d.text&&d.text.trim())?d.text.trim():"";
+      const d=await res.json(); entry.coach=(d.text&&d.text.trim())?d.text.trim():"";
     }catch(e){ entry.coach=""; }
     syncUp(); if(S.tab==="reflect")render();
   }
 }
 
-/* ----- AI Coach ----- */
-let coachMsgs=[{role:"assistant",text:"안녕! 나는 어텐션 코치야 😎\n계획대로 잘 안 됐던 적 있어? 아니면 어떤 과목이 제일 막막한지부터 얘기해 볼까?"}];
+/* ----- 코치 ----- */
+let coachMsgs=[{role:"assistant",text:"안녕! 나는 어텐션 코치야 😎\n공부하다 막히거나, 뭘 먼저 할지 모르겠을 때 편하게 말 걸어줘."}];
 let coachBusy=false;
 function renderCoach(){
   const v=document.getElementById("view");
-  const quick=["계획대로 안 지켜져요","어디부터 해야 할지 모르겠어요","시간이 부족해요","집중이 안 돼요"];
+  const quick=["계획대로 안 지켜져요","뭐부터 해야 할지 모르겠어요","집중이 안 돼요","그냥 막막해요"];
   v.innerHTML=`
    <div style="display:flex;flex-direction:column;height:calc(100vh - 200px);min-height:420px;padding:0 12px">
+     <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:2px 4px 10px;font-size:12.5px;color:var(--sub);line-height:1.6">
+       💡 <b style="color:var(--txt)">이럴 때 코치를 불러봐</b> — 계획대로 안 될 때 · 뭘 먼저 할지 모를 때 · 집중이 안 될 때 · 막막할 때. 코치는 답을 대신 주기보단, 질문으로 네 생각을 정리하게 도와줘.
+     </div>
      <div id="chat" class="scroll" style="flex:1;overflow-y:auto;padding:4px 4px 12px"></div>
      <div id="quick" class="scroll" style="display:flex;gap:8px;overflow-x:auto;padding:0 4px 10px"></div>
      <div style="display:flex;gap:8px;padding:4px 4px 6px">
@@ -568,43 +469,30 @@ function paintChat(busy){
   const c=document.getElementById("chat"); if(!c)return;
   c.innerHTML=coachMsgs.map(m=>`<div style="display:flex;justify-content:${m.role==="user"?"flex-end":"flex-start"};margin-bottom:10px">
     <div class="bubble" style="background:${m.role==="user"?"linear-gradient(90deg,var(--amber),var(--amber-d))":"var(--card)"};color:${m.role==="user"?"#1a1206":"var(--txt)"};border:${m.role==="user"?"none":"1px solid var(--line)"};font-weight:${m.role==="user"?"700":"400"};border-bottom-right-radius:${m.role==="user"?"5px":"16px"};border-bottom-left-radius:${m.role==="user"?"16px":"5px"}">${esc(m.text)}</div></div>`).join("")
-    + (busy?`<div class="bubble" style="background:var(--card);border:1px solid var(--line);width:fit-content"><span class="typing"><span></span><span></span><span></span></span></div>`:"");
+    +(busy?`<div class="bubble" style="background:var(--card);border:1px solid var(--line);width:fit-content"><span class="typing"><span></span><span></span><span></span></span></div>`:"");
   c.scrollTop=c.scrollHeight;
 }
 async function coachSend(text){
   const inp=document.getElementById("cin");
   const q=(text!==undefined?text:(inp?inp.value:"")).trim();
-  if(!q||coachBusy)return;
-  if(inp)inp.value="";
+  if(!q||coachBusy)return; if(inp)inp.value="";
   const qd=document.getElementById("quick"); if(qd)qd.innerHTML="";
   coachMsgs.push({role:"user",text:q}); coachBusy=true; paintChat(true);
-  if(!cfgReady){
-    coachMsgs.push({role:"assistant",text:"(아직 코치 서버가 연결 안 됐어 — 선생님이 곧 켜줄 거야!) 그동안 '내 계획' 탭에서 오늘 할 것 하나만 체크해 보자 💪"});
-    coachBusy=false;paintChat();return;
-  }
-  const plan=buildPlan();
-  const ctx={닉네임:S.nickname,과목현황:plan.summary.map(s=>s.name+"(D-"+s.dday+")").join(", ")||"아직 없음",
-    평일시간:S.weekdayHours+"h",주말시간:S.weekendHours+"h"};
+  if(!cfgReady){ coachMsgs.push({role:"assistant",text:"(아직 코치 서버가 연결 안 됐어 — 선생님이 곧 켜줄 거야!) 그동안 '이번 주' 탭에서 오늘 할 것 하나만 체크해 보자 💪"}); coachBusy=false;paintChat();return; }
   const sys=`너는 포항 '어텐션 학원'의 따뜻하고 에너지 넘치는 학습 코치다. 상대는 시험을 준비하는 중·고등학생.
 핵심 원칙: 절대 완성된 계획을 통째로 주지 말 것. 소크라테스식 질문으로 학생이 스스로 답을 찾게 도와라.
-- 한 번에 질문은 1개만, 짧고 구체적으로.
-- 답을 끌어낸 뒤 작고 현실적인 '오늘 할 일' 하나로 좁혀준다.
-- 반말로 친근하게, 2~4문장 이내로 간결하게.
-학생 현황(JSON): ${JSON.stringify(ctx)}`;
+- 한 번에 질문은 1개만, 짧고 구체적으로. 답을 끌어낸 뒤 작고 현실적인 '오늘 할 일' 하나로 좁혀준다.
+- 반말로 친근하게, 2~4문장 이내로 간결하게.`;
   const history=coachMsgs.slice(-8).map(m=>({role:m.role==="user"?"user":"assistant",content:m.text}));
   try{
-    const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",
-      headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},
-      body:JSON.stringify({system:sys,messages:history})});
-    const d=await res.json();
-    coachMsgs.push({role:"assistant",text:(d.text&&d.text.trim())?d.text.trim():"음, 다시 한 번 말해줄래?"});
-  }catch(e){
-    coachMsgs.push({role:"assistant",text:"코치 연결이 잠깐 안 되네 😅 '내 계획' 탭에서 오늘 1개만 먼저 체크해 보자. 어떤 과목부터 할래?"});
-  }finally{coachBusy=false;paintChat();}
+    const res=await fetch(CONFIG.FUNCTION_URL,{method:"POST",headers:{"Content-Type":"application/json","apikey":CONFIG.SUPABASE_KEY,"Authorization":"Bearer "+CONFIG.SUPABASE_KEY},body:JSON.stringify({system:sys,messages:history})});
+    const d=await res.json(); coachMsgs.push({role:"assistant",text:(d.text&&d.text.trim())?d.text.trim():"음, 다시 한 번 말해줄래?"});
+  }catch(e){ coachMsgs.push({role:"assistant",text:"코치 연결이 잠깐 안 되네 😅 '이번 주' 탭에서 오늘 1개만 먼저 체크해 보자."}); }
+  finally{ coachBusy=false; paintChat(); }
 }
 
 /* ---------- boot ---------- */
-document.querySelectorAll(".tabbtn").forEach(b=>b.addEventListener("click",()=>{S.tab=b.dataset.tab;render();}));
+document.querySelectorAll(".tabbtn").forEach(b=>b.addEventListener("click",()=>{S.tab=b.dataset.tab;if(b.dataset.tab==="setup")settingsWeek="cur";render();}));
 (async()=>{ await syncDown(); render(); })();
 </script>
 </body>
